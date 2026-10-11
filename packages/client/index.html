@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vanguard Tactics</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="hud">
+      <div class="hud-left">
+        <span class="brand">VANGUARD TACTICS</span>
+        <span id="hud-mode"></span>
+      </div>
+      <div class="hud-mid">
+        <span id="hud-time">00:00</span>
+        <span id="hud-objective"></span>
+      </div>
+      <div class="hud-right">
+        <span id="hud-gold"></span>
+        <span id="hud-nodes"></span>
+        <span id="time-ctl" title="Space: 일시정지 / 1~4: 속도">
+          <button data-speed="0" id="btn-pause">❚❚</button><button data-speed="0.5">½x</button><button data-speed="1" class="on">1x</button><button data-speed="2">2x</button><button data-speed="4">4x</button>
+        </span>
+        <label id="auto-pause" title="전투 관전 창을 열면 자동으로 일시정지"><input type="checkbox" id="chk-autopause" /> 관전 시 정지</label>
+      </div>
+    </header>
+    <main>
+      <div id="map-wrap">
+        <canvas id="map" width="800" height="500"></canvas>
+        <div id="battle-list"><div class="bl-title">전투 일람</div><div id="battle-list-body"></div></div>
+        <div id="log"></div>
+      </div>
+      <aside id="panel"></aside>
+    </main>
+    <div id="battle-overlay" class="hidden"></div>
+    <div id="start-screen">
+      <div class="start-card">
+        <h1>VANGUARD TACTICS</h1>
+        <p>전열/후열 편성 × 조건부 택틱 × 실시간 거점 쟁탈 — 프로토타입 v0.1</p>
+        <label>매치 목표
+          <select id="sel-mode">
+            <option value="domination">점령전 — 거점 과반을 120초 유지</option>
+            <option value="shrine">성소 쟁탈 — 중앙 성소 보유 누적 120초</option>
+            <option value="annihilation">전멸전 — 적 본진 점령</option>
+          </select>
+        </label>
+        <label>봇 난이도
+          <select id="sel-diff">
+            <option value="easy">쉬움</option>
+            <option value="normal" selected>보통</option>
+            <option value="hard">어려움</option>
+          </select>
+        </label>
+        <label>시드 <input id="inp-seed" type="number" value="1" /></label>
+        <button id="btn-start">매치 시작</button>
+        <div class="help">
+          <b>조작</b> — 맵에서 내 부대(파란색) 클릭 → 거점 클릭으로 이동. 거점에서만 편성 가능.
+          전투는 자동 진행되며 전투 아이콘이나 전투 일람을 클릭하면 관전할 수 있다. 패배 부대는 와해 상태로 퇴각하므로 거점에서 <b>재편성</b>해야 한다.
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
