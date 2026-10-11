@@ -3,6 +3,7 @@ import { Bot, type Difficulty } from '@vt/bot';
 import { MapView } from './mapView';
 import { Panel } from './panel';
 import { BattleView } from './battleView';
+import { sprite, UNIT_SPRITES } from './sprites';
 
 const $ = <T extends HTMLElement>(s: string) => document.querySelector(s) as T;
 const ME: PlayerId = 'P1';
@@ -38,7 +39,8 @@ class Game {
     const c = this.mapView.canvas;
     const toMap = (ev: MouseEvent) => {
       const r = c.getBoundingClientRect();
-      return { x: ((ev.clientX - r.left) / r.width) * c.width, y: ((ev.clientY - r.top) / r.height) * c.height };
+      const map = this.match.state.map;
+      return { x: ((ev.clientX - r.left) / r.width) * map.width, y: ((ev.clientY - r.top) / r.height) * map.height };
     };
     c.onmousemove = (ev) => { const p = toMap(ev); this.mapView.hover = this.mapView.hitTest(this.match, p.x, p.y); };
     c.onmouseleave = () => { this.mapView.hover = {}; };
@@ -111,6 +113,7 @@ class Game {
         this.acc -= RULES.tick;
       }
     }
+    this.fitMap();
     this.mapView.draw(this.match, this.panel.squad(), now);
     this.hud();
     if (now - this.lastPanel > 250) { this.panel.render(); this.lastPanel = now; }
@@ -118,6 +121,20 @@ class Game {
     if (this.match.state.winner) this.showEnd();
     requestAnimationFrame(this.frame);
   };
+
+  private lastFit = '';
+  /** integer-scale the low-res map canvas to the available area so pixels stay crisp */
+  private fitMap() {
+    const wrap = $('#map-wrap');
+    const c = this.mapView.canvas;
+    const cw = wrap.clientWidth - 8, ch = wrap.clientHeight - 8;
+    const scale = Math.max(1, Math.floor(Math.min(cw / c.width, ch / c.height)));
+    const key = `${scale}`;
+    if (key === this.lastFit) return;
+    this.lastFit = key;
+    c.style.width = `${c.width * scale}px`;
+    c.style.height = `${c.height * scale}px`;
+  }
 
   private hud() {
     const st = this.match.state;
@@ -186,7 +203,10 @@ class Game {
 }
 
 let game: Game | null = null;
-$('#btn-start').onclick = () => {
+// unit parade on the title screen
+for (const id of Object.keys(UNIT_SPRITES)) $('#parade').appendChild(sprite(id, 'P1', 2));
+$('#btn-start').onclick = async () => {
+  try { await Promise.all([document.fonts.load('11px Galmuri11'), document.fonts.load('9px Galmuri9'), document.fonts.load('7px Galmuri7')]); } catch {}
   const mode = ($('#sel-mode') as HTMLSelectElement).value as GameMode;
   const diff = ($('#sel-diff') as HTMLSelectElement).value as Difficulty;
   const seed = Number(($('#inp-seed') as HTMLInputElement).value) || 1;
