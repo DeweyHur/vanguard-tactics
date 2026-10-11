@@ -96,13 +96,13 @@ main { display: flex; flex: 1; min-height: 0; gap: 6px; }
 
 .formation { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 4px; }
 .formation .row-label { grid-column: 1 / -1; color: var(--muted); margin-top: 2px; }
-.cell { height: 84px; background: var(--win2); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; cursor: pointer; position: relative; padding-bottom: 4px; }
+.cell { height: 104px; background: var(--win2); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; cursor: pointer; position: relative; padding-bottom: 4px; }
 .cell:hover { background: var(--win3); }
 .cell.sel { border-color: var(--gold); }
 .cell.empty { color: var(--muted); justify-content: center; }
 .cell.injured .spr { filter: grayscale(1) brightness(.6); }
 .cell canvas { image-rendering: pixelated; display: block; }
-.cell .spr { height: 48px; }
+.cell .spr { height: 64px; }
 .cell .hpbar { width: 80%; height: 5px; background: var(--hp-bg); margin-top: 2px; border: 1px solid var(--frame-d); }
 .cell .hpbar i { display: block; height: 100%; background: var(--hp); }
 .cell .leader { position: absolute; top: 2px; left: 5px; color: var(--gold); }
@@ -120,7 +120,7 @@ main { display: flex; flex: 1; min-height: 0; gap: 6px; }
 .skills { color: var(--muted); margin: 4px; }
 
 /* ---------- battle overlay ---------- */
-#battle-overlay { position: absolute; top: 56px; left: 24px; width: 780px; padding: 10px 12px; z-index: 10; }
+#battle-overlay { position: absolute; top: 40px; left: 16px; width: 820px; padding: 10px 12px; z-index: 10; }
 #battle-overlay .bo-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: var(--gold); }
 #battle-overlay .bo-field { display: flex; justify-content: space-between; gap: 16px; padding: 8px; background: #1a2a1a url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="%232f5a24"/><rect x="1" y="2" width="1" height="1" fill="%233a6b2c"/><rect x="5" y="6" width="1" height="1" fill="%23264a1c"/><rect x="6" y="1" width="1" height="1" fill="%233a6b2c"/></svg>'); border: 2px solid var(--frame-d); }
 #battle-overlay .bo-side { flex: 1; }
@@ -131,7 +131,7 @@ main { display: flex; flex: 1; min-height: 0; gap: 6px; }
 #battle-overlay .morale i { display: block; height: 100%; background: var(--gold); }
 #battle-overlay .morale span { position: absolute; right: 4px; top: -3px; background: var(--win); padding: 0 4px; line-height: 12px; }
 .bo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0; }
-.bo-grid .cell { height: 78px; cursor: default; background: rgba(14,16,36,.75); }
+.bo-grid .cell { height: 100px; cursor: default; background: rgba(14,16,36,.75); }
 .bo-grid .cell.empty { background: transparent; border-color: transparent; outline-color: transparent; box-shadow: none; }
 .bo-grid .cell.ko { opacity: .3; }
 .bo-grid .cell.acting { border-color: var(--gold); background: rgba(80,60,20,.8); }
@@ -155,4 +155,4 @@ main { display: flex; flex: 1; min-height: 0; gap: 6px; }
 .start-card .help { margin-top: 12px; color: var(--muted); }
 .start-card .result { font-size: 16px; margin: 8px 0; color: var(--ok); }
 #parade { display: flex; gap: 2px; justify-content: center; margin: 6px 0 10px; padding: 6px 0 2px; background: #1a2a1a; border: 2px solid var(--frame-d); }
-#parade canvas { image-rendering: pixelated; }
+#parade canvas { image-rendering: pixelated; width: 40px; height: 40px; }

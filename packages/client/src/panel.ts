@@ -2,7 +2,7 @@ import {
   Match, RULES, CONDITIONS, UNIT_IDS, skill, unitDef, squadActive, squadUnits, slotRow,
   type Squad, type Row, type Tactic, type Command, type PlayerId,
 } from '@vt/sim';
-import { sprite } from './sprites';
+import { spriteEl } from './sprites';
 
 const STATE_KO: Record<string, string> = { idle: '대기', moving: '이동 중', capturing: '점령 중', battle: '전투 중', retreating: '퇴각 중', scattered: '와해' };
 
@@ -125,7 +125,7 @@ export class Panel {
       html += `<h3>유닛 요약</h3><div class="muted" style="font-size:11px;line-height:1.5">${UNIT_IDS.map((id) => { const d = unitDef(id); return `<b>${d.nameKo}</b> ${d.cost * 10}G — 전${d.front.actions}/후${d.back.actions}`; }).join('<br/>')}</div>`;
     }
     this.el.innerHTML = html;
-    this.el.querySelectorAll<HTMLElement>('.spr').forEach((h) => h.appendChild(sprite(h.dataset.def!, this.me, 3)));
+    this.el.querySelectorAll<HTMLElement>('.spr').forEach((h) => h.appendChild(spriteEl(h.dataset.def!, this.me, 1)));
     this.bind(sq, home);
   }
 

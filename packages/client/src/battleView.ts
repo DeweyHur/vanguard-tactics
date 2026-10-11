@@ -1,5 +1,5 @@
 import { Match, RULES, skill, unitDef, type BattleInstance, type BattleEvent, type Combatant, type Side } from '@vt/sim';
-import { sprite } from './sprites';
+import { spriteEl } from './sprites';
 
 interface Replay {
   A: Combatant[]; B: Combatant[];
@@ -119,7 +119,7 @@ export class BattleView {
       <div class="bo-field">${side('A', rp.A, nameA, rp.moraleA, rp.moraleMaxA)}${side('B', rp.B, nameB, rp.moraleB, rp.moraleMaxB)}</div>
       <div class="bo-log" id="bo-log">${rp.lines.map((l) => `<div class="${l.side ?? ''}">${l.text}</div>`).join('')}</div>`;
     this.el.querySelectorAll<HTMLElement>('.spr').forEach((holder) => {
-      holder.appendChild(sprite(holder.dataset.def!, holder.dataset.owner as 'P1' | 'P2', 3));
+      holder.appendChild(spriteEl(holder.dataset.def!, holder.dataset.owner as 'P1' | 'P2', 1));
     });
     (this.el.querySelector('#bo-close') as HTMLButtonElement).onclick = () => this.close();
     const log = this.el.querySelector('#bo-log') as HTMLElement;

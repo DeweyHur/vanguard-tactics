@@ -3,7 +3,7 @@ import { Bot, type Difficulty } from '@vt/bot';
 import { MapView } from './mapView';
 import { Panel } from './panel';
 import { BattleView } from './battleView';
-import { sprite, UNIT_SPRITES } from './sprites';
+import { spriteEl, UNIT_SPRITES } from './sprites';
 
 const $ = <T extends HTMLElement>(s: string) => document.querySelector(s) as T;
 const ME: PlayerId = 'P1';
@@ -204,7 +204,7 @@ class Game {
 
 let game: Game | null = null;
 // unit parade on the title screen
-for (const id of Object.keys(UNIT_SPRITES)) $('#parade').appendChild(sprite(id, 'P1', 2));
+for (const id of Object.keys(UNIT_SPRITES)) $('#parade').appendChild(spriteEl(id, 'P1', 1));
 $('#btn-start').onclick = async () => {
   try { await Promise.all([document.fonts.load('11px Galmuri11'), document.fonts.load('9px Galmuri9'), document.fonts.load('7px Galmuri7')]); } catch {}
   const mode = ($('#sel-mode') as HTMLSelectElement).value as GameMode;
