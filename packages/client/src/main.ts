@@ -13,7 +13,8 @@ const MODE_KO: Record<GameMode, string> = { domination: '점령전', shrine: '�
 class Game {
   match: Match;
   bot: Bot;
-  mapView = new MapView($('#map'));
+  mapView: MapView;
+  keys = new Set<string>();
   panel: Panel;
   battleView: BattleView;
   speed = 1;
@@ -27,6 +28,9 @@ class Game {
 
   constructor(public mode: GameMode, diff: Difficulty, seed: number) {
     this.match = new Match(MAP_RIVERLANDS, mode, seed);
+    this.mapView = new MapView($('#map'), $('#minimap'), MAP_RIVERLANDS.width, MAP_RIVERLANDS.height);
+    this.mapView.fit($('#map-wrap'));
+    this.mapView.cam.centerOn(this.match.homeOf(ME).x + 120, this.match.homeOf(ME).y);
     this.bot = new Bot(enemyOf(ME), this.match, diff);
     this.panel = new Panel($('#panel'), this.match, ME);
     this.battleView = new BattleView($('#battle-overlay'), () => {});
@@ -37,36 +41,42 @@ class Game {
 
   private bindInput() {
     const c = this.mapView.canvas;
-    const toMap = (ev: MouseEvent) => {
-      const r = c.getBoundingClientRect();
-      const map = this.match.state.map;
-      return { x: ((ev.clientX - r.left) / r.width) * map.width, y: ((ev.clientY - r.top) / r.height) * map.height };
-    };
-    c.onmousemove = (ev) => { const p = toMap(ev); this.mapView.hover = this.mapView.hitTest(this.match, p.x, p.y); };
+    const cam = this.mapView.cam;
+    const toScreen = (ev: MouseEvent) => { const r = c.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; };
+    const toWorld = (ev: MouseEvent) => { const s = toScreen(ev); return cam.toWorld(s.x, s.y); };
+    // drag-to-pan (left or middle button); a short press without movement is a click
+    let drag: { x: number; y: number; moved: boolean } | null = null;
+    c.onmousedown = (ev) => { if (ev.button === 0 || ev.button === 1) { drag = { x: ev.clientX, y: ev.clientY, moved: false }; ev.preventDefault(); } };
+    window.addEventListener('mousemove', (ev) => {
+      if (!drag) return;
+      const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+      drag.moved = true;
+      cam.pan(-dx, -dy);
+      drag.x = ev.clientX; drag.y = ev.clientY;
+      c.style.cursor = 'grabbing';
+    });
+    window.addEventListener('mouseup', (ev) => {
+      if (!drag) return;
+      const wasClick = !drag.moved && ev.button === 0 && ev.target === c;
+      drag = null;
+      c.style.cursor = 'crosshair';
+      if (wasClick) this.mapClick(toWorld(ev));
+    });
+    c.onmousemove = (ev) => { if (drag?.moved) return; const p = toWorld(ev); this.mapView.hover = this.mapView.hitTest(this.match, p.x, p.y); };
     c.onmouseleave = () => { this.mapView.hover = {}; };
-    c.onclick = (ev) => {
-      const p = toMap(ev);
-      const hit = this.mapView.hitTest(this.match, p.x, p.y);
-      if (hit.battle) { this.battleView.open(hit.battle); return; }
-      if (hit.squad) {
-        if (hit.squad.owner === ME) this.panel.select(hit.squad.id);
-        else {
-          // clicking an enemy squad: move selected squad to its node if it's at one
-          const sq = this.panel.squad();
-          if (sq && hit.squad.loc.node) this.issueMove(sq.id, hit.squad.loc.node);
-        }
-        return;
-      }
-      if (hit.node) {
-        const sq = this.panel.squad();
-        if (sq) this.issueMove(sq.id, hit.node.id);
-        else {
-          const here = this.match.state.squads.find((s) => s.owner === ME && s.loc.node === hit.node!.id);
-          if (here) this.panel.select(here.id);
-        }
-      }
-    };
+    c.onwheel = (ev) => { ev.preventDefault(); const s = toScreen(ev); cam.zoomStep(ev.deltaY < 0 ? 1 : -1, s.x, s.y); };
     c.oncontextmenu = (ev) => { ev.preventDefault(); const sq = this.panel.squad(); if (sq) this.match.command(ME, { type: 'stop', squad: sq.id }); };
+    // minimap: click / drag to move the camera
+    const mm = this.mapView.minimap;
+    const mmTo = (ev: MouseEvent) => { const r = mm.getBoundingClientRect(); const k = this.mapView.miniScale(); return { x: (ev.clientX - r.left) * (mm.width / r.width) / k, y: (ev.clientY - r.top) * (mm.height / r.height) / k }; };
+    let mmDrag = false;
+    mm.onmousedown = (ev) => { mmDrag = true; const p = mmTo(ev); cam.centerOn(p.x, p.y); ev.preventDefault(); };
+    mm.onmousemove = (ev) => { if (mmDrag) { const p = mmTo(ev); cam.centerOn(p.x, p.y); } };
+    window.addEventListener('mouseup', () => { mmDrag = false; });
+    mm.oncontextmenu = (ev) => ev.preventDefault();
+    document.querySelectorAll<HTMLButtonElement>('[data-zoom]').forEach((b) => (b.onclick = () => cam.zoomStep(Number(b.dataset.zoom), c.width / 2, c.height / 2)));
+    window.onkeyup = (ev) => this.keys.delete(ev.key);
     document.querySelectorAll<HTMLButtonElement>('#time-ctl [data-speed]').forEach((b) => (b.onclick = () => this.setSpeed(Number(b.dataset.speed))));
     window.onkeydown = (ev) => {
       if ((ev.target as HTMLElement)?.tagName === 'INPUT' || (ev.target as HTMLElement)?.tagName === 'SELECT') return;
@@ -76,9 +86,32 @@ class Game {
       if (ev.key === '3') this.setSpeed(0.5);
       if (ev.key === '4') this.setSpeed(4);
       if (ev.key === 'Escape') this.battleView.close();
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'w', 'a', 's', 'd'].includes(ev.key)) { this.keys.add(ev.key); ev.preventDefault(); }
+      if (ev.key === 'Home') { const h = this.match.homeOf(ME); cam.centerOn(h.x + 120, h.y); }
     };
     this.battleView.onOpen = () => { if (($('#chk-autopause') as HTMLInputElement).checked) this.setSpeed(0); };
     this.setSpeed(1);
+  }
+
+  private mapClick(p: { x: number; y: number }) {
+    const hit = this.mapView.hitTest(this.match, p.x, p.y);
+    if (hit.battle) { this.battleView.open(hit.battle); return; }
+    if (hit.squad) {
+      if (hit.squad.owner === ME) this.panel.select(hit.squad.id);
+      else {
+        const sq = this.panel.squad();
+        if (sq && hit.squad.loc.node) this.issueMove(sq.id, hit.squad.loc.node);
+      }
+      return;
+    }
+    if (hit.node) {
+      const sq = this.panel.squad();
+      if (sq) this.issueMove(sq.id, hit.node.id);
+      else {
+        const here = this.match.state.squads.find((s) => s.owner === ME && s.loc.node === hit.node!.id);
+        if (here) this.panel.select(here.id);
+      }
+    }
   }
 
   /** 0 = toggle pause; otherwise set speed and resume */
@@ -113,7 +146,12 @@ class Game {
         this.acc -= RULES.tick;
       }
     }
-    this.fitMap();
+    this.mapView.fit($('#map-wrap'));
+    const k = this.keys, pan = 420 * dt;
+    if (k.has('ArrowLeft') || k.has('a')) this.mapView.cam.pan(-pan, 0);
+    if (k.has('ArrowRight') || k.has('d')) this.mapView.cam.pan(pan, 0);
+    if (k.has('ArrowUp') || k.has('w')) this.mapView.cam.pan(0, -pan);
+    if (k.has('ArrowDown') || k.has('s')) this.mapView.cam.pan(0, pan);
     this.mapView.draw(this.match, this.panel.squad(), now);
     this.hud();
     if (now - this.lastPanel > 250) { this.panel.render(); this.lastPanel = now; }
@@ -121,20 +159,6 @@ class Game {
     if (this.match.state.winner) this.showEnd();
     requestAnimationFrame(this.frame);
   };
-
-  private lastFit = '';
-  /** integer-scale the low-res map canvas to the available area so pixels stay crisp */
-  private fitMap() {
-    const wrap = $('#map-wrap');
-    const c = this.mapView.canvas;
-    const cw = wrap.clientWidth - 8, ch = wrap.clientHeight - 8;
-    const scale = Math.max(1, Math.floor(Math.min(cw / c.width, ch / c.height)));
-    const key = `${scale}`;
-    if (key === this.lastFit) return;
-    this.lastFit = key;
-    c.style.width = `${c.width * scale}px`;
-    c.style.height = `${c.height * scale}px`;
-  }
 
   private hud() {
     const st = this.match.state;
