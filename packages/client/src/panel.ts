@@ -1,8 +1,10 @@
 import {
-  Match, RULES, CONDITIONS, UNIT_IDS, skill, unitDef, squadActive, squadUnits, slotRow,
-  type Squad, type Row, type Tactic, type Command, type PlayerId,
+  Match, RULES, UNIT_IDS, skill, unitDef, squadActive, squadUnits, slotRow,
+  type Squad, type Row, type Command, type PlayerId,
 } from '@vt/sim';
 import { spriteEl } from './sprites';
+import { tacticsHTML, bindTactics } from './tacticsEditor';
+import { allPresets, presetGold } from './presets';
 
 const STATE_KO: Record<string, string> = { idle: '대기', moving: '이동 중', capturing: '점령 중', battle: '전투 중', retreating: '퇴각 중', scattered: '와해' };
 
@@ -81,6 +83,9 @@ export class Panel {
       if (sq.state === 'moving') html += `<button id="btn-stop">정지</button>`;
       html += `<button id="btn-disband">부대 해산</button></div>`;
       html += `<div class="muted">이동 속도 ${this.m.squadSpeed(sq).toFixed(1)} · 맵에서 거점을 클릭하면 이동</div>`;
+      if (canRecruit) {
+        html += `<div class="preset-bar"><select id="sel-preset">${allPresets().map((p) => `<option value="${p.id}">${p.builtin ? '★ ' : ''}${p.name} (${presetGold(p)}G)</option>`).join('')}</select><button id="btn-apply-preset" title="빈 칸을 프리셋대로 소환하고 택틱을 적용 (군자금이 닿는 데까지)">프리셋 적용</button></div>`;
+      }
 
       const slot = this.selectedSlot;
       if (slot !== null) {
@@ -101,23 +106,7 @@ export class Panel {
           html += `<div class="unit-info"><b>${d.nameKo}</b> <span class="tags">${d.tags.join(' · ')}</span><br/>HP ${Math.round(u.hp)}/${d.hp} · ATK ${d.atk} · DEF ${d.def} · SPD ${d.spd}<br/>
             전열 ${d.front.actions}회: ${d.front.skills.map((s) => skill(s).name).join(', ') || '—'}<br/>후열 ${d.back.actions}회: ${d.back.skills.map((s) => skill(s).name).join(', ') || '—'}</div>`;
           html += `<div class="btnrow"><button id="btn-leader" ${sq.leader === slot ? 'disabled' : ''}>리더 지정</button><button id="btn-swap" class="${this.swapMode ? 'on' : ''}" ${canEdit ? '' : 'disabled'}>${this.swapMode ? '교체할 칸을 클릭…' : '자리 바꾸기'}</button><button id="btn-dismiss" ${canEdit && owned ? '' : 'disabled'}>해고 (50% 환불)</button></div>`;
-          // tactics editor
-          html += `<h3>택틱</h3><div class="tabs"><button class="${this.tab === 'front' ? 'on' : ''}" data-tab="front">전열 세트</button><button class="${this.tab === 'back' ? 'on' : ''}" data-tab="back">후열 세트</button></div>`;
-          const set = d[this.tab];
-          const tactics = u.tactics[this.tab].length ? u.tactics[this.tab] : set.tactics;
-          const isDefault = u.tactics[this.tab].length === 0;
-          if (set.actions === 0) html += `<div class="muted">이 열에서는 행동하지 않는다.</div>`;
-          else {
-            html += `<div class="skills">${set.actions}회 행동 · 위에서부터 조건을 만족하는 첫 행동을 실행 ${isDefault ? '<span class="muted">(기본값)</span>' : ''}</div>`;
-            tactics.forEach((t, i) => {
-              html += `<div class="tactic-row"><span class="idx">${i + 1}</span>
-                <select data-tr="${i}" data-f="skill">${set.skills.map((s) => `<option value="${s}" ${t.skill === s ? 'selected' : ''}>${skill(s).name}</option>`).join('')}</select>
-                <select data-tr="${i}" data-f="cond1">${CONDITIONS.map((c) => `<option value="${c.id}" ${t.cond1 === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}</select>
-                <select data-tr="${i}" data-f="cond2">${CONDITIONS.map((c) => `<option value="${c.id}" ${t.cond2 === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}</select>
-                <button data-del="${i}" title="삭제">✕</button></div>`;
-            });
-            html += `<div class="btnrow"><button id="btn-add-tactic" ${tactics.length >= 6 ? 'disabled' : ''}>+ 행 추가</button><button id="btn-reset-tactic" ${isDefault ? 'disabled' : ''}>기본값으로</button></div>`;
-          }
+          html += `<h3>택틱</h3>` + tacticsHTML(d, u.tactics, this.tab);
         }
       } else html += `<div class="muted">칸을 클릭하면 소환 / 유닛 정보 / 택틱 편집.</div>`;
     } else {
@@ -149,6 +138,20 @@ export class Panel {
       this.selectedSlot = slot; this.sig = ''; this.render(true);
     }));
     const on = (sel: string, fn: () => void) => { const b = q<HTMLButtonElement>(sel); if (b) b.onclick = fn; };
+    on('#btn-apply-preset', () => {
+      const id = (q<HTMLSelectElement>('#sel-preset')!).value;
+      const p = allPresets().find((x) => x.id === id); if (!p) return;
+      let err = '';
+      p.slots.forEach((d, i) => {
+        if (!d) return;
+        if (!sq.slots[i]) { const r = this.m.command(this.me, { type: 'recruit', squad: sq.id, unit: d, slot: i }); if (!r.ok) err = r.error ?? ''; }
+        const u = sq.slots[i];
+        const t = p.tactics[i];
+        if (u && u.def === d && t) { this.m.command(this.me, { type: 'setTactics', squad: sq.id, slot: i, row: 'front', tactics: t.front }); this.m.command(this.me, { type: 'setTactics', squad: sq.id, slot: i, row: 'back', tactics: t.back }); }
+      });
+      if (p.leader >= 0 && sq.slots[p.leader]) this.m.command(this.me, { type: 'setLeader', squad: sq.id, slot: p.leader });
+      this.error = err; this.sig = ''; this.render(true);
+    });
     on('#btn-reform', () => this.cmd({ type: 'reform', squad: sq.id }));
     on('#btn-stop', () => this.cmd({ type: 'stop', squad: sq.id }));
     on('#btn-disband', () => { this.cmd({ type: 'disband', squad: sq.id }); this.select(null); });
@@ -156,17 +159,10 @@ export class Panel {
     on('#btn-leader', () => this.cmd({ type: 'setLeader', squad: sq.id, slot: this.selectedSlot! }));
     on('#btn-dismiss', () => this.cmd({ type: 'dismiss', squad: sq.id, slot: this.selectedSlot! }));
     this.el.querySelectorAll<HTMLButtonElement>('[data-recruit]').forEach((b) => (b.onclick = () => this.cmd({ type: 'recruit', squad: sq.id, unit: b.dataset.recruit!, slot: this.selectedSlot! })));
-    this.el.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => (b.onclick = () => { this.tab = b.dataset.tab as Row; this.sig = ''; this.render(true); }));
     const u = this.selectedSlot !== null ? sq.slots[this.selectedSlot] : null;
     if (!u) return;
-    const d = unitDef(u.def);
-    const current = (): Tactic[] => (u.tactics[this.tab].length ? u.tactics[this.tab] : d[this.tab].tactics).map((t) => ({ ...t }));
-    const save = (ts: Tactic[]) => this.cmd({ type: 'setTactics', squad: sq.id, slot: this.selectedSlot!, row: this.tab, tactics: ts });
-    this.el.querySelectorAll<HTMLSelectElement>('select[data-tr]').forEach((s) => (s.onchange = () => {
-      const ts = current(); const i = Number(s.dataset.tr); (ts[i] as any)[s.dataset.f!] = s.value; save(ts);
-    }));
-    this.el.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((b) => (b.onclick = () => { const ts = current(); ts.splice(Number(b.dataset.del), 1); save(ts.length ? ts : [{ skill: d[this.tab].skills[0], cond1: 'none', cond2: 'none' }]); }));
-    on('#btn-add-tactic', () => { const ts = current(); ts.push({ skill: d[this.tab].skills[0], cond1: 'none', cond2: 'none' }); save(ts); });
-    on('#btn-reset-tactic', () => save([]));
+    bindTactics(this.el, unitDef(u.def), u.tactics, this.tab,
+      (row, ts) => this.cmd({ type: 'setTactics', squad: sq.id, slot: this.selectedSlot!, row, tactics: ts }),
+      (tab) => { this.tab = tab; this.sig = ''; this.render(true); });
   }
 }

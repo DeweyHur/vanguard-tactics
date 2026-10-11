@@ -161,3 +161,21 @@ main { display: flex; flex: 1; min-height: 0; gap: 6px; }
 #zoom-ctl { display: flex; gap: 4px; justify-content: flex-end; margin-top: 4px; }
 #zoom-ctl button { min-width: 26px; padding: 0 4px; }
 #log { width: 400px; }
+
+/* ---------- pre-match setup ---------- */
+#setup-screen { position: absolute; inset: 0; background: rgba(5,6,14,.94); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.setup-card { width: 1100px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); display: flex; flex-direction: column; border: 2px solid var(--frame-l); outline: 2px solid var(--frame-d); box-shadow: inset 0 0 0 2px var(--frame-d); background: var(--win); }
+.setup-head { display: flex; gap: 18px; align-items: center; padding: 8px 14px; border-bottom: 2px solid var(--frame-d); }
+.setup-head .title { color: var(--gold); letter-spacing: 2px; margin-right: 8px; }
+.setup-head .over { color: var(--p2); }
+.setup-body { display: flex; gap: 10px; padding: 10px 14px; overflow: auto; min-height: 0; }
+.setup-left { flex: 1.1; min-width: 0; }
+.setup-right { flex: 1; min-width: 0; border-left: 2px dotted #3a3f80; padding-left: 12px; }
+.setup-body h3 { margin: 8px 0 4px; color: var(--gold); }
+.setup-body h3::before { content: '▶ '; color: var(--muted); }
+.setup-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 14px; border-top: 2px solid var(--frame-d); }
+.setup-foot .go { background: var(--gold); color: #1a1020; padding: 6px 18px; font-size: 13px; }
+.preset-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 4px; }
+.preset-bar select { max-width: 200px; }
+.preset-bar input { width: 110px; }
+.setup-left .recruit button.on { background: var(--gold); color: #1a1020; }

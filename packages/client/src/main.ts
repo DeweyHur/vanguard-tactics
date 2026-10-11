@@ -1,4 +1,6 @@
-import { Match, MAP_RIVERLANDS, RULES, enemyOf, type GameMode, type PlayerId } from '@vt/sim';
+import { Match, MAP_RIVERLANDS, RULES, enemyOf, type GameMode, type PlayerId, type StartSetup } from '@vt/sim';
+import { Setup } from './setup';
+import { BUILTIN_PRESETS, presetGold } from './presets';
 import { Bot, type Difficulty } from '@vt/bot';
 import { MapView } from './mapView';
 import { Panel } from './panel';
@@ -26,8 +28,11 @@ class Game {
   lastBattle = 0;
   logSig = '';
 
-  constructor(public mode: GameMode, diff: Difficulty, seed: number) {
-    this.match = new Match(MAP_RIVERLANDS, mode, seed);
+  constructor(public mode: GameMode, diff: Difficulty, seed: number, start: StartSetup, budget: number) {
+    // the bot enters with the same budget: the balanced preset + the rest as gold
+    const bal = BUILTIN_PRESETS[0];
+    const botStart: StartSetup = budget >= presetGold(bal) ? { gold: budget - presetGold(bal), squads: [{ slots: [...bal.slots], leader: bal.leader }] } : { gold: budget, squads: [] };
+    this.match = new Match(MAP_RIVERLANDS, mode, seed, { start: { P1: start, P2: botStart } });
     this.mapView = new MapView($('#map'), $('#minimap'), MAP_RIVERLANDS.width, MAP_RIVERLANDS.height);
     this.mapView.fit($('#map-wrap'));
     this.mapView.cam.centerOn(this.match.homeOf(ME).x + 120, this.match.homeOf(ME).y);
@@ -229,15 +234,24 @@ class Game {
 let game: Game | null = null;
 // unit parade on the title screen
 for (const id of Object.keys(UNIT_SPRITES)) $('#parade').appendChild(spriteEl(id, 'P1', 1));
+const setup = new Setup($('#setup-screen'));
+const readOptions = () => ({
+  mode: ($('#sel-mode') as HTMLSelectElement).value as GameMode,
+  diff: ($('#sel-diff') as HTMLSelectElement).value as Difficulty,
+  seed: Number(($('#inp-seed') as HTMLInputElement).value) || 1,
+});
 $('#btn-start').onclick = async () => {
   try { await Promise.all([document.fonts.load('11px Galmuri11'), document.fonts.load('9px Galmuri9'), document.fonts.load('7px Galmuri7')]); } catch {}
-  const mode = ($('#sel-mode') as HTMLSelectElement).value as GameMode;
-  const diff = ($('#sel-diff') as HTMLSelectElement).value as Difficulty;
-  const seed = Number(($('#inp-seed') as HTMLInputElement).value) || 1;
   $('#start-screen').classList.add('hidden');
+  setup.show();
+};
+setup.onBack = () => { setup.hide(); $('#start-screen').classList.remove('hidden'); };
+setup.onStart = (start, budget) => {
+  const o = readOptions();
+  setup.hide();
   $('#battle-overlay').classList.add('hidden');
   if (game) game.running = false;
-  game = new Game(mode, diff, seed);
+  game = new Game(o.mode, o.diff, o.seed, start, budget);
   requestAnimationFrame(game.frame);
 };
 // expose for debugging / automated tests

@@ -76,6 +76,12 @@ export type Command =
 export interface CommandResult { ok: boolean; error?: string }
 
 export const PLAYERS: PlayerId[] = ['P1', 'P2'];
+
+/** Pre-match setup for one player: starting gold left over + squads already formed at home. */
+export interface StartSquad { slots: (string | null)[]; leader: number; tactics?: Record<number, { front: Tactic[]; back: Tactic[] }> }
+export interface StartSetup { gold: number; squads: StartSquad[] }
+export const DEFAULT_START: StartSetup = { gold: RULES.startGold, squads: [{ slots: ['infantry', 'spear', 'infantry', 'archer', null, 'archer'], leader: 0 }] };
+export interface MatchOptions { start?: Partial<Record<PlayerId, StartSetup>> }
 export const enemyOf = (p: PlayerId): PlayerId => (p === 'P1' ? 'P2' : 'P1');
 
 export class Match {
@@ -86,7 +92,7 @@ export class Match {
   private battleSeq = 0;
   private prevEdgePos = new Map<string, number>();
 
-  constructor(map: MapDef, mode: GameMode, seed: number) {
+  constructor(map: MapDef, mode: GameMode, seed: number, opts: MatchOptions = {}) {
     this.rng = new Rng(seed);
     for (const n of map.nodes) this.nodeById.set(n.id, n);
     for (const n of map.nodes) this.adj.set(n.id, []);
@@ -103,13 +109,23 @@ export class Match {
       nodes: Object.fromEntries(map.nodes.map((n) => [n.id, { id: n.id, owner: n.owner ?? null }])),
       squads: [], battles: [], log: [], winner: null, winReason: '', hold: { P1: 0, P2: 0 },
     };
-    // starting squad for each player at home
+    // starting squads for each player at home (from pre-match setup or the default)
     for (const p of PLAYERS) {
+      const setup = opts.start?.[p] ?? DEFAULT_START;
+      this.state.players[p].gold = setup.gold;
       const home = this.homeOf(p);
-      const sq = this.newSquad(p, home.id);
-      const start = ['infantry', 'spear', 'infantry', 'archer', null, 'archer'];
-      start.forEach((d, i) => { if (d) sq.slots[i] = this.newUnit(p, d); });
-      sq.leader = 0;
+      for (const ss of setup.squads.slice(0, RULES.maxSquads)) {
+        if (!ss.slots.some((d) => d)) continue;
+        const sq = this.newSquad(p, home.id);
+        ss.slots.slice(0, SQUAD_SLOTS).forEach((d, i) => {
+          if (!d) return;
+          const u = this.newUnit(p, d);
+          const t = ss.tactics?.[i];
+          if (t) u.tactics = { front: t.front.filter((x) => unitDef(d).front.skills.includes(x.skill)), back: t.back.filter((x) => unitDef(d).back.skills.includes(x.skill)) };
+          sq.slots[i] = u;
+        });
+        sq.leader = ss.leader >= 0 && sq.slots[ss.leader] ? ss.leader : sq.slots.findIndex((x) => x);
+      }
     }
     this.log('매치 시작', 'info');
   }
