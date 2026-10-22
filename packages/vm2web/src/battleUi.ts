@@ -22,6 +22,13 @@ export function initBattle(deps: BattleDeps) {
   const STEP_MS = 170, SUMMON_MS = 1000, SUMMON_FX = 162;
   const walkAnim = new Map<number, { path: Cell[]; t0: number }>();
   const summonAnim = new Map<number, { t0: number }>();
+  const STONE_MS = 1100; const stoneAnim = new Map<number, { t0: number; side: 0 | 1 }>();
+  const stonesSnap = () => ({ ...b!.s.stones });
+  /** flag stones whose owner changed since `before` (animated after `delay` ms, e.g. once the walk ends) */
+  function noteStones(before: Record<number, number>, delay = 0) {
+    for (const k of Object.keys(b!.s.stones)) { const o = b!.s.stones[+k]; if (o !== before[+k] && o >= 0) { stoneAnim.set(+k, { t0: now() + delay, side: o as 0 | 1 }); kickAnim(); } }
+    if (delay) setTimeout(() => deps.sfx.role('turn'), delay);
+  }
   const now = () => performance.now();
   /** start the walk animation for a unit that just moved along b.lastPath; returns its duration */
   function startWalk(u: Unit, delay = 0): number {
@@ -52,7 +59,7 @@ export function initBattle(deps: BattleDeps) {
   let blinkTick = 0; const blinkOn = () => blinkTick % 9 === 0;
   const deaths = new Map<number, { t0: number; r: number; c: number; side: 0 | 1; id: string; facing: number }>();
   setInterval(() => { if (!b || $('tab-battle').classList.contains('hidden')) return; blinkTick++; draw(); }, 120);
-  let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { const t = now(); for (let i = pops.length - 1; i >= 0; i--) if (t - pops[i].t0 > 1100) pops.splice(i, 1); for (const [k, d] of deaths) if (t - d.t0 > 1400) deaths.delete(k); for (const [k, w] of walkAnim) if (t - w.t0 > (w.path.length - 1) * STEP_MS) walkAnim.delete(k); for (const [k, w] of summonAnim) if (t - w.t0 > SUMMON_MS) summonAnim.delete(k); if (!attackAnim.size && !pops.length && !deaths.size && !walkAnim.size && !summonAnim.size) { clearInterval(animTimer); return; } draw(); }, 50); };
+  let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { const t = now(); for (let i = pops.length - 1; i >= 0; i--) if (t - pops[i].t0 > 1100) pops.splice(i, 1); for (const [k, d] of deaths) if (t - d.t0 > 1400) deaths.delete(k); for (const [k, w] of walkAnim) if (t - w.t0 > (w.path.length - 1) * STEP_MS) walkAnim.delete(k); for (const [k, w] of summonAnim) if (t - w.t0 > SUMMON_MS) summonAnim.delete(k); for (const [k, w] of stoneAnim) if (t - w.t0 > STONE_MS) stoneAnim.delete(k); if (!attackAnim.size && !pops.length && !deaths.size && !walkAnim.size && !summonAnim.size && !stoneAnim.size) { clearInterval(animTimer); return; } draw(); }, 50); };
 
   const toUnitDef = (n: Natial): UnitDef => ({ id: `n${n.index}`, name: n.name, stats: n.stats, move: n.move, element: n.element, range: Math.max(1, n.range), moveType: Math.min(4, n.moveType), cost: n.cost, upkeep: Math.round(n.hp / RULES.upkeepDiv), spell: n.spell, light: n.flag1 });
 
@@ -92,8 +99,8 @@ export function initBattle(deps: BattleDeps) {
     if (busy) return; busy = true;
     while (b && b.s.winner < 0 && active() && active()!.side === 1) {
       await new Promise((r) => setTimeout(r, 350));
-      if (!b) break; const u = active()!; const n0 = b.s.log.length; const uid0 = b.s.nextUid; const before = { r: u.r, c: u.c }; const aliveBefore = b.alive();
-      botAct(b); const walkMs = startWalk(u); noteDeaths(aliveBefore, walkMs);
+      if (!b) break; const u = active()!; const n0 = b.s.log.length; const uid0 = b.s.nextUid; const before = { r: u.r, c: u.c }; const aliveBefore = b.alive(); const stonesBefore = stonesSnap();
+      botAct(b); const walkMs = startWalk(u); noteDeaths(aliveBefore, walkMs); noteStones(stonesBefore, walkMs);
       const added = b.s.log.slice(n0); const hitLine = added.find((l) => l.includes('피해'));
       if (hitLine) { const tn = /→ (.+?) \d+ 피해/.exec(hitLine)?.[1]; const t = b.s.units.find((x) => x.def.name === tn); if (t) { const ax = u.c + (u.r & 1) * 0.5, tx = t.c + (t.r & 1) * 0.5; attackAnim.set(u.uid, { t0: now() + walkMs, dx: Math.sign(tx - ax), dy: Math.sign(t.r - u.r) }); kickAnim(); } setTimeout(() => { if (!deps.sfx.attack(u.def.id, masterIdx[1])) deps.sfx.role('attack'); }, walkMs); popDamage(n0, walkMs); if (added.some((l) => l.includes('격파'))) setTimeout(() => deps.sfx.role('kill'), walkMs + 600); }
       else if (added.some((l) => l.includes('소환'))) { deps.sfx.role('summon'); startSummon(uid0); }
@@ -119,7 +126,13 @@ export function initBattle(deps: BattleDeps) {
     if (!b || !ts || !grid) return;
     g.save(); g.translate(-cam.x, -cam.y); g.scale(cam.z, cam.z); g.drawImage(world, 0, 0);
     const L = lightAt(b.s.clock); if (L) { g.fillStyle = L === 2 ? 'rgba(10,15,50,.45)' : 'rgba(40,20,50,.2)'; g.fillRect(cam.x / cam.z, cam.y / cam.z, canvas.width / cam.z, canvas.height / cam.z); }
-    for (const k of Object.keys(b.s.stones)) { const r = Math.floor(+k / 32), c = +k % 32; const own = b.s.stones[+k]; const p = center(r, c); hexPath(g, p.x, p.y); g.lineWidth = 1.5; g.strokeStyle = own === 0 ? '#4af' : own === 1 ? '#f66' : '#ee4'; g.stroke(); }
+    const tNow = now();
+    for (const k of Object.keys(b.s.stones)) { const r = Math.floor(+k / 32), c = +k % 32; const own = b.s.stones[+k]; const p = center(r, c); const col = own === 0 ? '#4af' : own === 1 ? '#f66' : '#ee4';
+      const sa = stoneAnim.get(+k); const age = sa ? tNow - sa.t0 : -1; const k1 = age >= 0 ? Math.min(1, age / STONE_MS) : 1;
+      if (own >= 0) { hexPath(g, p.x, p.y); g.fillStyle = own === 0 ? `rgba(60,140,255,${age >= 0 ? 0.22 + 0.4 * (1 - k1) : 0.22})` : `rgba(255,80,80,${age >= 0 ? 0.22 + 0.4 * (1 - k1) : 0.22})`; g.fill(); }
+      hexPath(g, p.x, p.y); g.lineWidth = 1.5; g.strokeStyle = col; g.stroke();
+      if (age >= 0 && k1 < 1) { for (let ring = 0; ring < 2; ring++) { const kk = Math.max(0, k1 - ring * 0.25) / 0.75; if (kk <= 0 || kk > 1) continue; g.save(); g.translate(p.x, p.y); g.scale(1 + kk * 1.2, 1 + kk * 1.2); hexPath(g, 0, 0); g.restore(); g.lineWidth = 2.5 * (1 - kk); g.strokeStyle = sa!.side === 0 ? `rgba(120,180,255,${1 - kk})` : `rgba(255,120,120,${1 - kk})`; g.stroke(); }
+        if (k1 < 0.3) { g.globalAlpha = (0.3 - k1) / 0.3 * 0.8; g.fillStyle = '#fff'; hexPath(g, p.x, p.y); g.fill(); g.globalAlpha = 1; } } }
     const u0 = mine();
     const lit: { r: number; c: number }[] = u0 && summonIdx < 0 && !magicMode ? [...b.reachable(u0).values()] : [];
     const tg = u0 ? (magicMode ? b.magicTargets(u0) : b.targetsFrom(u0, u0.r, u0.c)) : [];
@@ -174,10 +187,13 @@ export function initBattle(deps: BattleDeps) {
 
   const portraitHtml = (id: string, h = 96) => (id.startsWith('n') && deps.portrait(+id.slice(1)) ? `<div class="pbox" data-k="${id.slice(1)}" data-h="${h}"></div>` : '');
   function mountPortrait(box: HTMLElement) { const c = deps.portrait(+box.dataset.k!); if (!c) return; const t = document.createElement('canvas'); const h = +(box.dataset.h ?? 96); t.height = h; t.width = Math.round(c.width * h / c.height); t.getContext('2d')!.drawImage(c, 0, 0, t.width, h); box.appendChild(t); }
-  const statGrid = (v: number[]) => `<div class="ustat"><span><b>${v[0]}</b>⚔ 공격</span><span><b>${v[1]}</b>🛡 방어</span><span><b>${v[2]}</b>✨ 마공</span><span><b>${v[3]}</b>🔰 마방</span><span><b>${v[4]}</b>👢 속도</span></div>`;
+  const STAT_NAME = ['⚔ 공격', '🛡 방어', '✨ 마공', '🔰 마방', '👢 속도'], STAT_CLS = ['atk', 'def', 'mag', 'mdef', 'spd'];
+  /** highest value of each stat among every natial (any level) and the masters — the gauges' 100% */
+  const statMax = (): number[] => [0, 1, 2, 3, 4].map((k) => Math.max(RULES.master.stats[k], ...(b?.natials ?? []).flatMap((n) => n.stats[k])));
+  const statGauges = (v: number[], ref?: number[]) => { const mx = statMax(); const top = Math.max(...v); return `<div class="gauges">${v.map((x, k) => `<div class="gr ${STAT_CLS[k]}${x === top ? ' top' : ''}"><span class="gl">${STAT_NAME[k]}</span><span class="gb"><i style="width:${Math.min(100, x / mx[k] * 100)}%"></i>${ref && ref[k] !== x ? `<em style="left:${Math.min(100, ref[k] / mx[k] * 100)}%"></em>` : ''}</span><b>${x}</b></div>`).join('')}</div>`; };
   const hpBar = (hp: number) => `<div class="hp">${Array.from({ length: RULES.hp }, (_, i) => `<i class="${i < hp ? 'on' : ''}"></i>`).join('')}</div>`;
-  const unitHtml = (u: Unit) => `${portraitHtml(u.def.id, 72)}<b>${u.def.name}</b> <span class="e${u.def.element}">${ELEMENT[u.def.element] ?? ''}</span> <span class="muted">Lv${u.level}${u.def.light ? ` · ${u.def.light === 1 ? '주간형' : '야간형'}` : ''}</span>${hpBar(u.hp)}${statGrid([0, 1, 2, 3, 4].map((k) => b!.stat(u, k)))}<div class="muted small" style="margin-top:4px">이동 ${u.def.move}${u.def.range > 1 ? ` · 사정 ${u.def.range}` : ''}${u.def.spell ? ' · 마법' : ''} · 다음 행동까지 ${u.oa}분${u.def.upkeep ? ` · 유지 ${u.def.upkeep}` : ''}</div>`;
-  const natialHtml = (n: UnitDef) => `${portraitHtml(n.id, 72)}<b>${n.name}</b> <span class="e${n.element}">${ELEMENT[n.element] ?? ''}</span>${n.light ? ` <span class="muted">${n.light === 1 ? '주간형' : '야간형'}</span>` : ''}${statGrid(n.stats.map((v) => v[0]))}<div class="muted small" style="margin-top:4px">Lv2/3: ${n.stats.map((v) => `${v[1]}/${v[2]}`).join(' · ')}<br>이동 ${n.move} · 사정 ${n.range}${n.spell ? ' · 마법' : ''} · 소환 <b>${b!.summonCost(n)} MP</b> · 유지 ${n.upkeep}/시간</div>`;
+  const unitHtml = (u: Unit) => `${portraitHtml(u.def.id, 72)}<b>${u.def.name}</b> <span class="e${u.def.element}">${ELEMENT[u.def.element] ?? ''}</span> <span class="muted">Lv${u.level}${u.def.light ? ` · ${u.def.light === 1 ? '주간형' : '야간형'}` : ''}</span>${hpBar(u.hp)}${statGauges([0, 1, 2, 3, 4].map((k) => b!.stat(u, k)), u.def.stats.map((v) => v[u.level - 1]))}<div class="muted small" style="margin-top:4px">이동 ${u.def.move}${u.def.range > 1 ? ` · 사정 ${u.def.range}` : ''}${u.def.spell ? ' · 마법' : ''} · 다음 행동까지 ${u.oa}분${u.def.upkeep ? ` · 유지 ${u.def.upkeep}` : ''}</div>`;
+  const natialHtml = (n: UnitDef) => `${portraitHtml(n.id, 72)}<b>${n.name}</b> <span class="e${n.element}">${ELEMENT[n.element] ?? ''}</span>${n.light ? ` <span class="muted">${n.light === 1 ? '주간형' : '야간형'}</span>` : ''}${statGauges(n.stats.map((v) => v[0]))}<div class="muted small" style="margin-top:4px">Lv2/3: ${n.stats.map((v) => `${v[1]}/${v[2]}`).join(' · ')}<br>이동 ${n.move} · 사정 ${n.range}${n.spell ? ' · 마법' : ''} · 소환 <b>${b!.summonCost(n)} MP</b> · 유지 ${n.upkeep}/시간</div>`;
   const mountAll = (el: HTMLElement) => el.querySelectorAll<HTMLElement>('.pbox').forEach(mountPortrait);
   function openSummon() { const me = mine(); if (!me || !me.def.master) return; buildSummonList(); $('bSummonPop').classList.remove('hidden'); }
   function closeSummon() { $('bSummonPop').classList.add('hidden'); }
@@ -228,7 +244,7 @@ export function initBattle(deps: BattleDeps) {
     if (!b || !ts || !grid || busy) return;
     const p = toWorld(e); const cell = pickCell(ts, grid, p.x, p.y); if (!cell) return;
     const me = mine(); if (!me) return;
-    const u = b.unitAt(cell.r, cell.c); let err: string | null = null; const n0 = b.s.log.length; let acted = false; const aliveBefore = b.alive();
+    const u = b.unitAt(cell.r, cell.c); let err: string | null = null; const n0 = b.s.log.length; let acted = false; const aliveBefore = b.alive(); const stonesBefore = stonesSnap();
     const uid0 = b.s.nextUid;
     if (summonIdx >= 0) { err = b.summon(summonIdx, cell.r, cell.c); if (!err) { deps.sfx.role('summon'); startSummon(uid0); acted = true; } }
     else if (u && u.side !== 0 && (magicMode ? b.magicTargets(me).includes(u) : b.targetsFrom(me, me.r, me.c).includes(u))) {
@@ -236,9 +252,9 @@ export function initBattle(deps: BattleDeps) {
       err = magicMode ? b.magic(me.uid, u.uid) : b.attack(me.uid, u.uid);
       if (!err) { attackAnim.set(me.uid, { t0: now(), dx: Math.sign(ux - ax), dy: Math.sign(u.r - me.r) }); kickAnim(); if (!deps.sfx.attack(me.def.id, masterIdx[0])) deps.sfx.role('attack'); if (b.s.log.slice(n0).some((l) => l.includes('격파'))) setTimeout(() => deps.sfx.role('kill'), 600); popDamage(n0); acted = true; }
     }
-    else if (!u && b.reachable(me).has(key(cell.r, cell.c))) { err = b.move(me.uid, cell.r, cell.c); if (!err) startWalk(me); }
+    else if (!u && b.reachable(me).has(key(cell.r, cell.c))) { err = b.move(me.uid, cell.r, cell.c); if (!err) noteStones(stonesBefore, startWalk(me)); }
     else if (u && u.side !== 0 && dist(me, u) > 1) err = magicMode ? '마법 사정거리 밖' : '사정거리 밖';
-    if (err) b.log(`! ${err}`); noteDeaths(aliveBefore);
+    if (err) b.log(`! ${err}`); noteDeaths(aliveBefore); if (acted) noteStones(stonesBefore);
     if (acted) afterAction(); else { refresh(); draw(); }
   };
   canvas.onwheel = (e) => {

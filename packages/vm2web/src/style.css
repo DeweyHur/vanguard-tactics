@@ -62,3 +62,9 @@ td input { width: 56px; padding: 1px 3px; text-align: right; } td input.chg { bo
 .gallery { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; } .gal { width: 96px; padding: 4px; border: 1px solid var(--line); border-radius: 4px; background: #15171d; cursor: pointer; text-align: center; } .gal:hover { border-color: var(--acc); } .gal.sel { border-color: var(--acc); background: #22262f; }
 .gal .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .thumb { image-rendering: pixelated; background: #2b2f3a; } tr.clickable { cursor: pointer; } tr.clickable:hover td { background: #1c1f27; }
 #bSummon button .pthumb canvas { width: 48px; height: 48px; } #bSummonBtn.sel { background: var(--acc); color: #000; }
+.gauges { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+.gr { display: grid; grid-template-columns: 52px 1fr 22px; align-items: center; gap: 6px; } .gr .gl { color: var(--mut); white-space: nowrap; } .gr b { text-align: right; }
+.gr .gb { position: relative; height: 9px; background: #262a34; border-radius: 2px; overflow: hidden; } .gr .gb i { display: block; height: 100%; border-radius: 2px; background: var(--gc); }
+.gr .gb em { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; opacity: .7; }
+.gr.atk { --gc: #e8623a; } .gr.def { --gc: #3f8ee8; } .gr.mag { --gc: #b067e8; } .gr.mdef { --gc: #3fc08a; } .gr.spd { --gc: #e8c33a; }
+.gr.top .gl, .gr.top b { color: #fff; font-weight: bold; } .gr.top .gb i { box-shadow: 0 0 6px var(--gc); }
