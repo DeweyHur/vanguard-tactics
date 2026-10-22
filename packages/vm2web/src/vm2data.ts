@@ -39,6 +39,8 @@ export interface Sprite { frames: Uint8Array[]; w: number; h: number }
 /** DATA02 entry (blue team) holding each natial's map sprite; red team = +2. Order was identified visually. */
 export const NATIAL_SPRITE: number[] = [106, 94, 98, 102, 110, 114, 118, 122, 126, 130, 134, 138, 142, 146, 150, 154, 158, 162, 166, 170, 174, 178, 182, 186];
 export const MASTER_SPRITE = (m: number) => (m < 18 ? m * 4 : 72 + (m - 18) * 2);
+/** DATA01 index of the walk sheet for a DATA02 sprite entry (resource table pairs 1:k with 2:2k; 186..202 map to 183..191) */
+export const WALK_ENTRY = (data02Entry: number) => (data02Entry >= 186 ? 183 + (data02Entry - 186) / 2 : data02Entry / 2);
 export interface Natial { index: number; name: string; attack: string; hp: number; stats: number[][]; move: number; element: number; flag1: number; range: number; spell: number; moveType: number; cost: number }
 
 export function parseHeader(raw: Uint8Array): MapHeader {
@@ -161,6 +163,19 @@ export class VM2Data {
       j++;
     }
     return out;
+  }
+  /**
+   * DATA01 walk sheet: a plain 384x168 8-bit image (16x14 chunks of 24x12, row-major). Rows 0-1 hold 16 walking frames
+   * of 48x56 (8 facings x 2 steps: W, SW, S, SE, E, NE, N, NW); row 2 holds 8 frames of death fragments.
+   */
+  walk(entry: number): Sprite | null {
+    const e = this.entries.DATA01?.[entry]; if (!e?.length) return null;
+    const x = this.get('DATA01', entry); if (x.length < 224 * 288) return null;
+    const sheet = new Uint8Array(384 * 168);
+    for (let i = 0; i < 224; i++) for (let y = 0; y < 12; y++) sheet.set(x.subarray(i * 288 + y * 24, i * 288 + y * 24 + 24), ((i >> 4) * 12 + y) * 384 + (i & 15) * 24);
+    const frames: Uint8Array[] = [];
+    for (let f = 0; f < 24; f++) { const fr = new Uint8Array(48 * 56); const x0 = (f % 8) * 48, y0 = (f >> 3) * 56; for (let y = 0; y < 56; y++) fr.set(sheet.subarray((y0 + y) * 384 + x0, (y0 + y) * 384 + x0 + 48), y * 48); frames.push(fr); }
+    return { frames, w: 48, h: 56 };
   }
   /** sound effects (DATA13 RIFF/WAVE entries) */
   sfxCount() { return this.entries.DATA13 ? this.entries.DATA13.filter((e) => e.length >= 4 && e[0] === 0x52).length : 0; }

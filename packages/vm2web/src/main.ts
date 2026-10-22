@@ -7,7 +7,7 @@ import { initBattle } from './battleUi';
 import { Sfx, SFX_ROLES, DEFAULT_SFX, type SfxRole } from './sound';
 import { portraitCanvas, indexedCanvas } from './render';
 import { MidiPlayer } from './midi';
-import { NATIAL_SPRITE, MASTER_SPRITE } from './vm2data';
+import { NATIAL_SPRITE, MASTER_SPRITE, WALK_ENTRY } from './vm2data';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = (s: string) => { $('status').textContent = s; };
@@ -49,7 +49,7 @@ async function loadAll() {
   try { data.load(game); loaded = true; renderers.clear(); }
   catch (e) { status(`읽기 실패: ${(e as Error).message}`); return; }
   status(`맵 ${data.maps.length} · 타일셋 ${data.tilesets.size} · 마스터 ${data.masters.length}${data.exe ? ' · EXE 있음' : ' · EXE 없음(스탯 편집 불가)'}${data.has('DATA02') ? ' · 스프라이트' : ''}${Object.keys(data.extra).length ? ` · MIDI ${Object.keys(data.extra).length}` : ''}`);
-  buildMapList(); buildNatials(); buildMasters(); buildSound(); selectMap(cur); battle.populate(); sfx.reset(); portraitCache.clear(); spriteCache.clear(); spritesBuilt = false;
+  buildMapList(); buildNatials(); buildMasters(); buildSound(); selectMap(cur); battle.populate(); sfx.reset(); portraitCache.clear(); spriteCache.clear(); walkCache.clear(); spritesBuilt = false;
   if (!$('tab-maps').classList.contains('hidden')) fitView();
 }
 
@@ -212,6 +212,13 @@ function spriteFrame(entry: number, frame: number): HTMLCanvasElement | null {
   }
   return spriteCache.get(k) ?? null;
 }
+const walkCache = new Map<string, HTMLCanvasElement | null>();
+/** 48x56 canvas of one DATA01 walk/death frame for a DATA02 sprite entry */
+function walkFrame(data02Entry: number, frame: number): HTMLCanvasElement | null {
+  const k = `${data02Entry}:${frame}`;
+  if (!walkCache.has(k)) { const sp = loaded ? data.walk(WALK_ENTRY(data02Entry)) : null; const fr = sp?.frames[frame]; let c: HTMLCanvasElement | null = null; if (fr) { c = indexedCanvas(fr, 48, 56, data.palette()); let bottom = 55; while (bottom > 0 && !fr.subarray(bottom * 48, bottom * 48 + 48).some((v) => v !== 16)) bottom--; c.dataset.bottom = `${bottom}`; } walkCache.set(k, c); }
+  return walkCache.get(k) ?? null;
+}
 const midi = new MidiPlayer();
 const spriteEntryFor = (k: number) => edits.spriteMap?.[k] ?? NATIAL_SPRITE[k];
 /** animated preview cycling through the given frames (driven by one shared timer) */
@@ -246,7 +253,9 @@ function buildSprites() {
     tbl.appendChild(tr);
   }
   mapEl.appendChild(tbl);
-  for (const e of entries) { const row = document.createElement('div'); row.className = 'sprow'; const lab = document.createElement('div'); lab.className = 'muted small'; lab.textContent = `#${e}` + (e < 72 ? ` (마스터 ${Math.floor(e / 4)}${e % 4 ? ' 빨강' : ' 파랑'})` : ''); row.appendChild(lab); const body = document.createElement('div'); body.className = 'sprow-body'; body.appendChild(animOf(e, Array.from({ length: 18 }, (_, i) => i))); body.appendChild(stripOf(e, Array.from({ length: 18 }, (_, i) => i))); row.appendChild(body); allEl.appendChild(row); }
+  for (const e of entries) { const row = document.createElement('div'); row.className = 'sprow'; const lab = document.createElement('div'); lab.className = 'muted small'; lab.textContent = `#${e}` + (e < 72 ? ` (마스터 ${Math.floor(e / 4)}${e % 4 ? ' 빨강' : ' 파랑'})` : ''); row.appendChild(lab); const body = document.createElement('div'); body.className = 'sprow-body'; body.appendChild(animOf(e, Array.from({ length: 18 }, (_, i) => i))); body.appendChild(stripOf(e, Array.from({ length: 18 }, (_, i) => i))); row.appendChild(body);
+    const wk = document.createElement('div'); wk.className = 'strip'; for (let f = 0; f < 24; f++) { const c = walkFrame(e, f); if (!c) break; const t = document.createElement('canvas'); t.width = 48; t.height = 56; t.title = `걷기 ${f}`; t.getContext('2d')!.drawImage(c, 0, 0); wk.appendChild(t); } if (wk.childElementCount) { const lab2 = document.createElement('div'); lab2.className = 'muted small'; lab2.textContent = 'DATA01 걷기 16 + 사망 8'; row.appendChild(lab2); row.appendChild(wk); }
+    allEl.appendChild(row); }
 }
 function midFiles(): string[] { return loaded ? Object.keys(data.extra).filter((n) => n.endsWith('.MID')).sort() : []; }
 function portrait(k: number): HTMLCanvasElement | null {
@@ -321,5 +330,5 @@ $('btnExportExe').onclick = () => {
 const sfx = new Sfx(() => (loaded ? data : null), sfxRoles);
 $<HTMLInputElement>('sfxOn').onchange = (e) => { sfx.enabled = (e.target as HTMLInputElement).checked; };
 $<HTMLInputElement>('sfxVol').oninput = (e) => { sfx.volume = +(e.target as HTMLInputElement).value; };
-const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name, portrait, sfx, sprite: (id, side, frame) => { const e = id === 'master' ? -1 : id.startsWith('n') ? spriteEntryFor(+id.slice(1)) : -1; return e < 0 ? null : spriteFrame(e + side * 2, frame); }, masterSprite: (m, side, frame) => spriteFrame(MASTER_SPRITE(m) + side * 2, frame), bgm: () => { const f = edits.bgm && data.extra[edits.bgm]; if (f) midi.play(f); }, bgmStop: () => midi.stop() });
+const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name, portrait, sfx, sprite: (id, side, frame) => { const e = id === 'master' ? -1 : id.startsWith('n') ? spriteEntryFor(+id.slice(1)) : -1; return e < 0 ? null : spriteFrame(e + side * 2, frame); }, masterSprite: (m, side, frame) => spriteFrame(MASTER_SPRITE(m) + side * 2, frame), walk: (id, side, frame, m) => { const e = id === 'master' ? MASTER_SPRITE(m) : id.startsWith('n') ? spriteEntryFor(+id.slice(1)) : -1; return e < 0 ? null : walkFrame(e + side * 2, frame); }, bgm: () => { const f = edits.bgm && data.extra[edits.bgm]; if (f) midi.play(f); }, bgmStop: () => midi.stop() });
 loadAll();

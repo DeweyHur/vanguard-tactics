@@ -86,3 +86,7 @@ Sources: 나무위키 밴티지 마스터 택틱스 항목 (user-provided excerp
   type (+2 to all stats in their period, -2 in the opposite; the capture showed Guene-Foss 5/5/8/9 at 7:00 and 7/7/10/11 at 11:15).
 - Damage is deterministic. One sample: MAG 10 vs MDEF 5 -> 6, so damage = ATK - DEF + 1 (element +-2, side +1, rear +2,
   height +-1, terrain defence %). More samples needed.
+- `DATA01` decoded: each entry is a plain 384x168 8-bit image (16x14 chunks of 24x12 in row-major order). Rows 0-1 =
+  16 walking frames of 48x56 (8 facings x 2 steps: W, SW, S, SE, E, NE, N, NW), row 2 = 8 death fragments (the unit
+  breaks apart and rises). DATA01 index = DATA02 entry / 2 (186..202 -> 183..191). Units on the map always play the
+  2-step walk cycle in their facing; DATA02 poses are only used for the attack.

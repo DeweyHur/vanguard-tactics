@@ -1,4 +1,4 @@
-import { type VM2Data, type MapInfo, type Natial, type Tileset, TERRAIN, ELEMENT, TILE_H } from './vm2data';
+import { type VM2Data, type MapInfo, type Natial, type Tileset, TERRAIN, ELEMENT } from './vm2data';
 import { TileRenderer, drawMap, worldSize, pickCell, cellOrigin, hexPath } from './render';
 import { Battle, reachableFrom, masterDef, dirOf, type UnitDef, type Unit, type Terrain } from './battle/engine';
 import { botAct } from './battle/bot';
@@ -8,7 +8,7 @@ import type { Sfx } from './sound';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-export interface BattleDeps { data: () => VM2Data | null; natials: () => Natial[]; mapGrid: (m: MapInfo) => Uint16Array; mapTileset: (m: MapInfo) => Tileset; mapName: (m: MapInfo) => string; portrait: (k: number) => HTMLCanvasElement | null; sfx: Sfx; sprite: (defId: string, side: 0 | 1, frame: number) => HTMLCanvasElement | null; masterSprite: (m: number, side: 0 | 1, frame: number) => HTMLCanvasElement | null; bgm: () => void; bgmStop: () => void }
+export interface BattleDeps { data: () => VM2Data | null; natials: () => Natial[]; mapGrid: (m: MapInfo) => Uint16Array; mapTileset: (m: MapInfo) => Tileset; mapName: (m: MapInfo) => string; portrait: (k: number) => HTMLCanvasElement | null; sfx: Sfx; sprite: (defId: string, side: 0 | 1, frame: number) => HTMLCanvasElement | null; masterSprite: (m: number, side: 0 | 1, frame: number) => HTMLCanvasElement | null; walk: (defId: string, side: 0 | 1, frame: number, masterIdx: number) => HTMLCanvasElement | null; bgm: () => void; bgmStop: () => void }
 
 export function initBattle(deps: BattleDeps) {
   const canvas = $<HTMLCanvasElement>('bmap'), wrap = $('bwrap'), g = canvas.getContext('2d')!;
@@ -21,12 +21,13 @@ export function initBattle(deps: BattleDeps) {
   const active = () => b?.activeUnit() ?? null;
   const mine = () => { const u = active(); return u && u.side === 0 && b!.s.winner < 0 ? u : null; };
 
+  function noteDeaths(before: Unit[]) { for (const u of before) if (u.hp <= 0 && !deaths.has(u.uid)) { deaths.set(u.uid, { t0: performance.now(), r: u.r, c: u.c, side: u.side, id: u.def.id }); kickAnim(); } }
   function popDamage(n0: number) {
     for (const line of b!.s.log.slice(n0)) { const hit = /^(.+?) → (.+?) (\d+) 피해/.exec(line); if (!hit) continue; const t = b!.s.units.find((u) => u.def.name === hit[2]); if (t) pops.push({ uid: t.uid, text: hit[3], t0: performance.now() }); }
     if (pops.length) kickAnim();
   }
   function frameOf(u: Unit): number {
-    const an = attackAnim.get(u.uid); if (!an) return u.facing * 3;
+    const an = attackAnim.get(u.uid); if (!an) return -1; // -1: use the walk cycle
     const age = performance.now() - an.t0; if (age > 700) { attackAnim.delete(u.uid); return u.facing * 3; }
     return u.facing * 3 + (age < 250 ? 1 : 2);
   }
@@ -35,8 +36,11 @@ export function initBattle(deps: BattleDeps) {
     return { x: an.dx * 10 * k, y: an.dy * 6 * k };
   }
   let blinkTick = 0; const blinkOn = () => blinkTick % 9 === 0;
-  setInterval(() => { if (!b || $('tab-battle').classList.contains('hidden')) return; const was = blinkOn(); blinkTick++; if (was !== blinkOn()) draw(); }, 120);
-  let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { const now = performance.now(); for (let i = pops.length - 1; i >= 0; i--) if (now - pops[i].t0 > 1100) pops.splice(i, 1); if (!attackAnim.size && !pops.length) { clearInterval(animTimer); return; } draw(); }, 50); };
+  /** 6-facing index -> 8-direction walk sheet index (W, SW, S, SE, E, NE, N, NW) */
+  const WALK_DIR = [0, 1, 3, 4, 5, 7];
+  const deaths = new Map<number, { t0: number; r: number; c: number; side: 0 | 1; id: string }>();
+  setInterval(() => { if (!b || $('tab-battle').classList.contains('hidden')) return; blinkTick++; draw(); }, 120);
+  let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { const now = performance.now(); for (let i = pops.length - 1; i >= 0; i--) if (now - pops[i].t0 > 1100) pops.splice(i, 1); for (const [k, d] of deaths) if (now - d.t0 > 1400) deaths.delete(k); if (!attackAnim.size && !pops.length && !deaths.size) { clearInterval(animTimer); return; } draw(); }, 50); };
 
   const toUnitDef = (n: Natial): UnitDef => ({ id: `n${n.index}`, name: n.name, stats: n.stats, move: n.move, element: n.element, range: Math.max(1, n.range), moveType: Math.min(4, n.moveType), cost: n.cost, upkeep: Math.round(n.hp / RULES.upkeepDiv), spell: n.spell, light: n.flag1 });
 
@@ -76,8 +80,8 @@ export function initBattle(deps: BattleDeps) {
     if (busy) return; busy = true;
     while (b && b.s.winner < 0 && active() && active()!.side === 1) {
       await new Promise((r) => setTimeout(r, 350));
-      if (!b) break; const u = active()!; const n0 = b.s.log.length; const before = { r: u.r, c: u.c };
-      botAct(b);
+      if (!b) break; const u = active()!; const n0 = b.s.log.length; const before = { r: u.r, c: u.c }; const aliveBefore = b.alive();
+      botAct(b); noteDeaths(aliveBefore);
       const added = b.s.log.slice(n0); const hitLine = added.find((l) => l.includes('피해'));
       if (hitLine) { const tn = /→ (.+?) \d+ 피해/.exec(hitLine)?.[1]; const t = b.s.units.find((x) => x.def.name === tn); if (t) { const ax = u.c + (u.r & 1) * 0.5, tx = t.c + (t.r & 1) * 0.5; attackAnim.set(u.uid, { t0: performance.now(), dx: Math.sign(tx - ax), dy: Math.sign(t.r - u.r) }); kickAnim(); } if (!deps.sfx.attack(u.def.id, masterIdx[1])) deps.sfx.role('attack'); popDamage(n0); if (added.some((l) => l.includes('격파'))) setTimeout(() => deps.sfx.role('kill'), 600); }
       else if (added.some((l) => l.includes('소환'))) deps.sfx.role('summon');
@@ -107,22 +111,19 @@ export function initBattle(deps: BattleDeps) {
     const lit: { r: number; c: number }[] = u0 && !summonIdx && summonIdx < 0 && !magicMode ? [...b.reachable(u0).values()] : [];
     const tg = u0 ? (magicMode ? b.magicTargets(u0) : b.targetsFrom(u0, u0.r, u0.c)) : [];
     const sc = u0 && summonIdx >= 0 ? b.summonCells(0, b.natials[summonIdx]) : [];
-    if (lit.length || tg.length || sc.length) {
-      g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(cam.x / cam.z, cam.y / cam.z, canvas.width / cam.z, canvas.height / cam.z);
-      const cells = [...lit, ...tg.map((t) => ({ r: t.r, c: t.c })), ...sc]; cells.sort((a, c) => a.r - c.r || a.c - c.c);
-      for (const cell of cells) { const o = cellOrigin(cell.r, cell.c); g.drawImage(rend!.tile(grid[cell.r * 32 + cell.c]), o.x, o.base - TILE_H); }
-      for (const t of tg) fillHex(t.r, t.c, magicMode ? 'rgba(120,255,160,.4)' : 'rgba(255,60,60,.35)');
-      for (const p of sc) fillHex(p.r, p.c, 'rgba(80,255,120,.35)');
-    }
+    for (const v of lit) fillHex(v.r, v.c, 'rgba(80,160,255,.35)');
+    for (const t of tg) fillHex(t.r, t.c, magicMode ? 'rgba(120,255,160,.45)' : 'rgba(255,60,60,.45)');
+    for (const p of sc) fillHex(p.r, p.c, 'rgba(80,255,120,.4)');
     const act = active();
     for (const u of b.alive().sort((x, y) => x.r - y.r || x.c - y.c)) {
       const p = center(u.r, u.c); const fr = frameOf(u); const off = animOffset(u); p.x += off.x; p.y += off.y;
-      const sp = u.def.master ? deps.masterSprite(masterIdx[u.side], u.side, fr) : deps.sprite(u.def.id, u.side, fr);
+      const walkF = WALK_DIR[u.facing] * 2 + (Math.floor(blinkTick / 3) & 1);
+      const sp = fr < 0 ? (deps.walk(u.def.id, u.side, walkF, masterIdx[u.side]) ?? (u.def.master ? deps.masterSprite(masterIdx[u.side], u.side, u.facing * 3) : deps.sprite(u.def.id, u.side, u.facing * 3))) : (u.def.master ? deps.masterSprite(masterIdx[u.side], u.side, fr) : deps.sprite(u.def.id, u.side, fr));
       const isActive = u === act;
       if (sp) {
         g.beginPath(); g.ellipse(p.x, p.y + 4, 16, 8, 0, 0, Math.PI * 2); g.fillStyle = isActive ? 'rgba(255,255,255,.6)' : u.side === 0 ? 'rgba(60,120,255,.45)' : 'rgba(255,70,70,.45)'; g.fill();
         if (isActive && blinkOn()) g.globalAlpha = 0.45;
-        g.drawImage(sp, p.x - 48, p.y + 8 - (+(sp.dataset.bottom ?? 90))); g.globalAlpha = 1;
+        g.drawImage(sp, p.x - sp.width / 2, p.y + 8 - (+(sp.dataset.bottom ?? sp.height - 6))); g.globalAlpha = 1;
         if (u.def.master) { g.lineWidth = 2; g.strokeStyle = '#ffd24a'; g.beginPath(); g.ellipse(p.x, p.y + 4, 17, 9, 0, 0, Math.PI * 2); g.stroke(); }
       } else {
         g.beginPath(); g.arc(p.x, p.y, u.def.master ? 13 : 11, 0, Math.PI * 2); g.fillStyle = u.side === 0 ? '#2a6fd6' : '#d63a3a'; g.fill();
@@ -133,6 +134,8 @@ export function initBattle(deps: BattleDeps) {
       for (let i = 0; i < RULES.hp; i++) { g.fillStyle = i < u.hp ? (u.hp > 5 ? '#ffd24a' : u.hp > 2 ? '#f90' : '#e44') : '#333'; g.fillRect(p.x - 15 + i * 3, p.y + 13, 2, 3); }
       if (u.level > 1) { g.fillStyle = '#ffd24a'; g.font = 'bold 9px monospace'; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillText(`L${u.level}`, p.x + 16, p.y + 11); }
     }
+    for (const d of deaths.values()) { const age = performance.now() - d.t0; const p = center(d.r, d.c); const k = age / 1400; g.globalAlpha = Math.max(0, 1 - k);
+      for (let i = 0; i < 8; i++) { const fr = deps.walk(d.id, d.side, 16 + i, masterIdx[d.side]); if (!fr) break; const ang = i / 8 * Math.PI * 2; g.drawImage(fr, p.x - 24 + Math.cos(ang) * 10 * k, p.y - 40 - k * 60 + Math.sin(ang) * 6 * k); } g.globalAlpha = 1; }
     for (const pp of pops) { const u = b.unit(pp.uid); if (!u) continue; const age = performance.now() - pp.t0; if (age < 0) continue; const p = center(u.r, u.c); const y = p.y - 40 - Math.min(age, 300) / 300 * 14;
       g.font = 'bold 14px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = '#000'; g.strokeText(pp.text, p.x, y); g.fillStyle = '#fff'; g.fillText(pp.text, p.x, y); }
     if (hover) { const p = center(hover.r, hover.c); hexPath(g, p.x, p.y); g.lineWidth = 1; g.strokeStyle = '#ff0'; g.stroke(); const d = ts.defs[grid[hover.r * 32 + hover.c]]; const u = b.unitAt(hover.r, hover.c);
@@ -179,7 +182,7 @@ export function initBattle(deps: BattleDeps) {
     if (!b || !ts || !grid || busy) return;
     const p = toWorld(e); const cell = pickCell(ts, grid, p.x, p.y); if (!cell) return;
     const me = mine(); if (!me) return;
-    const u = b.unitAt(cell.r, cell.c); let err: string | null = null; const n0 = b.s.log.length; let acted = false;
+    const u = b.unitAt(cell.r, cell.c); let err: string | null = null; const n0 = b.s.log.length; let acted = false; const aliveBefore = b.alive();
     if (summonIdx >= 0) { err = b.summon(summonIdx, cell.r, cell.c); if (!err) { deps.sfx.role('summon'); acted = true; } }
     else if (u && u.side !== 0 && (magicMode ? b.magicTargets(me).includes(u) : b.targetsFrom(me, me.r, me.c).includes(u))) {
       const ax = me.c + (me.r & 1) * 0.5, ux = u.c + (u.r & 1) * 0.5;
@@ -188,7 +191,7 @@ export function initBattle(deps: BattleDeps) {
     }
     else if (!u && b.reachable(me).has(key(cell.r, cell.c))) { err = b.move(me.uid, cell.r, cell.c); }
     else if (u && u.side !== 0 && dist(me, u) > 1) err = magicMode ? '마법 사정거리 밖' : '사정거리 밖';
-    if (err) b.log(`! ${err}`);
+    if (err) b.log(`! ${err}`); noteDeaths(aliveBefore);
     if (acted) afterAction(); else { refresh(); draw(); }
   };
   canvas.onwheel = (e) => {
