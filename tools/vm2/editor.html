@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>VM2 Map Editor</title>
+<style>
+  :root { --bg:#14121c; --win:#221f33; --line:#4a4466; --text:#efeadc; --muted:#9a94b8; --gold:#f4c64f; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font: 13px/1.4 system-ui, 'Malgun Gothic', sans-serif; height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; gap:12px; align-items:center; padding:6px 10px; background:var(--win); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header b { color:var(--gold); letter-spacing:1px; }
+  select, input, button { background:#2e2a44; color:var(--text); border:1px solid var(--line); padding:3px 6px; font:inherit; }
+  button { cursor:pointer; } button:hover { background:#3a3558; } button.on { background:var(--gold); color:#000; }
+  main { display:flex; flex:1; min-height:0; }
+  #mapwrap { flex:1; position:relative; overflow:hidden; background:#0b0a12; }
+  #map { position:absolute; left:0; top:0; image-rendering:pixelated; cursor:crosshair; }
+  #hud { position:absolute; left:8px; bottom:8px; background:rgba(34,31,51,.9); padding:4px 8px; border:1px solid var(--line); pointer-events:none; }
+  aside { width:420px; background:var(--win); border-left:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+  aside .sec { padding:8px 10px; border-bottom:1px solid var(--line); }
+  aside textarea { width:100%; height:110px; background:#1a1828; color:var(--text); border:1px solid var(--line); font:12px monospace; }
+  #pal { flex:1; overflow:auto; padding:6px; display:grid; grid-template-columns: repeat(auto-fill, 56px); gap:4px; align-content:start; }
+  #pal .t { width:56px; border:1px solid var(--line); background:#1a1828; cursor:pointer; text-align:center; font-size:10px; color:var(--muted); }
+  #pal .t canvas { display:block; margin:0 auto; image-rendering:pixelated; }
+  #pal .t.sel { border-color:var(--gold); background:#3a3020; color:var(--gold); }
+  .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:3px 0; }
+  .muted { color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <b>VM2 MAP EDITOR</b>
+  <label>맵 <select id="selMap"></select></label>
+  <label>이름 <input id="inpName" size="14" /></label>
+  <label>줌 <select id="selZoom"><option>1</option><option selected>2</option><option>3</option></select></label>
+  <label title="JSON을 이 슬롯 번호로 저장 (다른 슬롯에 복제하려면 바꾸세요)">저장 슬롯 <select id="selTarget"></select></label>
+  <button id="btnExport">JSON 내보내기</button>
+  <button id="btnReset">원본으로</button>
+  <span class="muted">좌클릭 칠하기 · 우클릭 스포이드 · 드래그(가운데)/방향키 스크롤 · 휠 줌</span>
+</header>
+<main>
+  <div id="mapwrap"><canvas id="map"></canvas><div id="hud"></div></div>
+  <aside>
+    <div class="sec">
+      <div class="row"><span>브러시: <b id="brushInfo">—</b></span></div>
+      <div class="row">
+        <label>지형 <select id="fTerrain"><option value="">전체</option></select></label>
+        <label>높이 <select id="fHeight"><option value="">전체</option></select></label>
+        <label><input type="checkbox" id="fUsed" /> 이 맵에서 쓰인 타일만</label>
+      </div>
+    </div>
+    <div id="pal"></div>
+    <div class="sec">
+      <div class="muted">설명문 (cp949, 줄바꿈 \n) — 원본 바이트 예산 안에서만</div>
+      <textarea id="txtDesc"></textarea>
+      <div class="muted">두 번째 설명(해설)</div>
+      <textarea id="txtDesc2" style="height:60px"></textarea>
+    </div>
+  </aside>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+const CW = 24, CH = 12, HEX_W = 48, ROW = 18, ODD = 24, TILE_H = 24 * CH;
+const $ = (s) => document.querySelector(s);
+const TERRAIN = DATA.terrain;
+
+// ---------- tileset rendering ----------
+const atlasImgs = {}; const tileCache = {};
+function atlas(key) {
+  if (atlasImgs[key]) return atlasImgs[key];
+  const im = new Image(); im.src = DATA.tilesets[key].atlas; atlasImgs[key] = im; return im;
+}
+function tileCanvas(key, idx, night) {
+  const ck = key + ':' + idx + ':' + (night ? 1 : 0);
+  if (tileCache[ck]) return tileCache[ck];
+  const ts = DATA.tilesets[key]; const d = ts.defs[idx]; const im = atlas(key);
+  const c = document.createElement('canvas'); c.width = HEX_W; c.height = TILE_H; const g = c.getContext('2d');
+  // d[0] = left 24px column, d[1] = right column; slot k is stacked bottom-up
+  for (let half = 0; half < 2; half++) {
+    const list = d[half];
+    for (let k = 0; k < 24; k++) {
+      const i = list[k]; if (i === 0x7ff || i >= ts.chunks) continue;
+      g.drawImage(im, 0, i * CH, CW, CH, half * CW, (23 - k) * CH, CW, CH);
+    }
+  }
+  tileCache[ck] = c; return c;
+}
+
+// ---------- state ----------
+let cur = null, grid = null, brush = null, night = false, zoom = 2, cam = { x: 0, y: 0 };
+const mapC = $('#map'), mg = mapC.getContext('2d');
+function loadMap(n) {
+  cur = DATA.maps[n]; grid = cur.grid.slice(); $('#inpName').value = cur.name; $('#txtDesc').value = cur.desc; $('#txtDesc2').value = cur.desc2;
+  $('#selTarget').value = n; buildPalette(); draw();
+}
+function worldSize() { return { w: 32 * HEX_W + ODD + 16, h: 32 * ROW + TILE_H + 16 }; }
+function cellOrigin(r, c) { return { x: c * HEX_W + (r % 2) * ODD + 8, base: r * ROW + TILE_H + 8 }; }
+function draw() {
+  const wrap = $('#mapwrap'); mapC.width = wrap.clientWidth; mapC.height = wrap.clientHeight;
+  mg.imageSmoothingEnabled = false; mg.fillStyle = '#0b0a12'; mg.fillRect(0, 0, mapC.width, mapC.height);
+  mg.setTransform(zoom, 0, 0, zoom, -cam.x * zoom, -cam.y * zoom);
+  for (let r = 0; r < 32; r++) for (let c = 0; c < 32; c++) {
+    const t = grid[r * 32 + c]; const o = cellOrigin(r, c);
+    mg.drawImage(tileCanvas(cur.tileset, t, night), o.x, o.base - TILE_H);
+  }
+  if (hover) { const o = cellOrigin(hover.r, hover.c); const h = DATA.tilesets[cur.tileset].defs[grid[hover.r * 32 + hover.c]][3];
+    const cy = o.base - 18 - 12 * h; mg.strokeStyle = '#f4c64f'; mg.lineWidth = 2 / zoom; hexPath(o.x + 24, cy); mg.stroke(); }
+  mg.setTransform(1, 0, 0, 1, 0, 0);
+}
+function hexPath(cx, cy) { mg.beginPath(); mg.moveTo(cx, cy - 18); mg.lineTo(cx + 24, cy - 9); mg.lineTo(cx + 24, cy + 9); mg.lineTo(cx, cy + 18); mg.lineTo(cx - 24, cy + 9); mg.lineTo(cx - 24, cy - 9); mg.closePath(); }
+let hover = null;
+function pick(sx, sy) {
+  const wx = sx / zoom + cam.x, wy = sy / zoom + cam.y; let best = null, bd = 1e9;
+  for (let r = 0; r < 32; r++) for (let c = 0; c < 32; c++) {
+    const o = cellOrigin(r, c); const h = DATA.tilesets[cur.tileset].defs[grid[r * 32 + c]][3];
+    const cx = o.x + 24, cy = o.base - 18 - 12 * h; const d = Math.hypot((wx - cx) / 24, (wy - cy) / 18);
+    if (d < bd) { bd = d; best = { r, c }; }
+  }
+  return bd < 1.1 ? best : null;
+}
+// ---------- palette ----------
+function buildPalette() {
+  const ts = DATA.tilesets[cur.tileset]; const pal = $('#pal'); pal.innerHTML = '';
+  const fT = $('#fTerrain').value, fH = $('#fHeight').value, used = $('#fUsed').checked ? new Set(grid) : null;
+  const heights = new Set(), terrains = new Set();
+  ts.defs.forEach((d, i) => { if (d[0].some((v) => v !== 0x7ff)) { heights.add(d[3]); terrains.add(d[4]); } });
+  fill($('#fTerrain'), [...terrains].sort((a, b) => a - b).map((t) => [t, (TERRAIN[t] || '?') + ' (' + t + ')']), fT);
+  fill($('#fHeight'), [...heights].sort((a, b) => a - b).map((h) => [h, 'h' + h]), fH);
+  ts.defs.forEach((d, i) => {
+    if (!d[0].some((v) => v !== 0x7ff) && !d[1].some((v) => v !== 0x7ff)) return;
+    if (fT !== '' && String(d[4]) !== fT) return; if (fH !== '' && String(d[3]) !== fH) return; if (used && !used.has(i)) return;
+    const el = document.createElement('div'); el.className = 't' + (brush === i ? ' sel' : ''); el.dataset.i = i;
+    const src = tileCanvas(cur.tileset, i, night); const th = document.createElement('canvas'); th.width = 48; th.height = 72;
+    const g = th.getContext('2d'); g.imageSmoothingEnabled = false;
+    const top = 23 - Math.max(0, ...d[0].map((v, k) => v !== 0x7ff ? k : 0), ...d[1].map((v, k) => v !== 0x7ff ? k : 0));
+    g.drawImage(src, 0, top * CH, 48, 72, 0, 0, 48, 72);
+    el.appendChild(th); el.insertAdjacentHTML('beforeend', `#${i} ${TERRAIN[d[4]] || '?'} h${d[3]}`);
+    el.onclick = () => setBrush(i); pal.appendChild(el);
+  });
+}
+function fill(sel, opts, keep) { const v = keep; sel.innerHTML = '<option value="">전체</option>' + opts.map(([k, l]) => `<option value="${k}">${l}</option>`).join(''); sel.value = v; }
+function setBrush(i) { brush = i; const d = DATA.tilesets[cur.tileset].defs[i]; $('#brushInfo').textContent = `#${i} ${TERRAIN[d[4]] || '?'} 높이${d[3]}`; document.querySelectorAll('#pal .t').forEach((e) => e.classList.toggle('sel', Number(e.dataset.i) === i)); }
+// ---------- input ----------
+let painting = false, panning = null;
+mapC.addEventListener('mousedown', (e) => { if (e.button === 1) { panning = { x: e.clientX, y: e.clientY }; e.preventDefault(); return; } if (e.button === 0) { painting = true; paint(e); } if (e.button === 2) { const p = pick(e.offsetX, e.offsetY); if (p) setBrush(grid[p.r * 32 + p.c]); } });
+window.addEventListener('mouseup', () => { painting = false; panning = null; });
+mapC.addEventListener('mousemove', (e) => { if (panning) { cam.x -= (e.clientX - panning.x) / zoom; cam.y -= (e.clientY - panning.y) / zoom; panning = { x: e.clientX, y: e.clientY }; draw(); return; }
+  hover = pick(e.offsetX, e.offsetY); if (painting) paint(e); else draw(); updHud(); });
+mapC.addEventListener('contextmenu', (e) => e.preventDefault());
+mapC.addEventListener('wheel', (e) => { e.preventDefault(); const z = [1, 2, 3]; let i = z.indexOf(zoom) + (e.deltaY < 0 ? 1 : -1); i = Math.max(0, Math.min(2, i)); setZoom(z[i], e.offsetX, e.offsetY); });
+window.addEventListener('keydown', (e) => { if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return; const s = 60 / zoom; if (e.key === 'ArrowLeft') cam.x -= s; if (e.key === 'ArrowRight') cam.x += s; if (e.key === 'ArrowUp') cam.y -= s; if (e.key === 'ArrowDown') cam.y += s; draw(); });
+function setZoom(z, sx, sy) { const wx = sx / zoom + cam.x, wy = sy / zoom + cam.y; zoom = z; cam.x = wx - sx / zoom; cam.y = wy - sy / zoom; $('#selZoom').value = z; draw(); }
+function paint(e) { const p = pick(e.offsetX, e.offsetY); if (!p || brush === null) return; if (grid[p.r * 32 + p.c] !== brush) { grid[p.r * 32 + p.c] = brush; draw(); } }
+function updHud() { if (!hover) { $('#hud').textContent = ''; return; } const t = grid[hover.r * 32 + hover.c]; const d = DATA.tilesets[cur.tileset].defs[t]; $('#hud').textContent = `(${hover.c}, ${hover.r}) 타일 #${t} · ${TERRAIN[d[4]] || '?'} · 높이 ${d[3]} (기준 ${d[2]}) · flags ${d[5]}`; }
+// ---------- header controls ----------
+$('#selMap').innerHTML = DATA.maps.map((m) => `<option value="${m.map}">${m.map} ${m.name}</option>`).join('');
+$('#selTarget').innerHTML = DATA.maps.map((m) => `<option value="${m.map}">${m.map} ${m.name}</option>`).join('');
+$('#selMap').onchange = (e) => loadMap(Number(e.target.value));
+$('#selZoom').onchange = (e) => setZoom(Number(e.target.value), mapC.width / 2, mapC.height / 2);
+['#fTerrain', '#fHeight', '#fUsed'].forEach((s) => ($(s).onchange = buildPalette));
+$('#btnReset').onclick = () => loadMap(cur.map);
+$('#btnExport').onclick = () => {
+  const target = Number($('#selTarget').value); const tm = DATA.maps[target];
+  const doc = { map: target, source_map: cur.map, name: $('#inpName').value, desc: $('#txtDesc').value, desc2: $('#txtDesc2').value,
+    tilemap_entry: tm.tilemap_entry, tiledef_entry: cur.tiledef_entry, header_b64: cur.header_b64, target_tilemap_entry: tm.tilemap_entry,
+    grid: Array.from({ length: 32 }, (_, r) => grid.slice(r * 32, r * 32 + 32)) };
+  const blob = new Blob([JSON.stringify(doc, null, 1)], { type: 'application/json' }); const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `map${String(target).padStart(2, '0')}.json`; a.click();
+};
+window.addEventListener('resize', draw);
+Promise.all(Object.keys(DATA.tilesets).map((k) => new Promise((res) => { const im = atlas(k); im.onload = res; if (im.complete) res(); }))).then(() => loadMap(0));
+</script>
+</body>
+</html>

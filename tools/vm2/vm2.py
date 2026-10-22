@@ -7,6 +7,8 @@
   python3 vm2.py map-export <gamedir> <map#> <out.json>   header + 32x32 tile grid + tile properties
   python3 vm2.py map-import <in.json> <moddir>            write edited tile grid / texts back as mod entries
   python3 vm2.py map-render <gamedir> <map#> <out.png>    schematic hex render (terrain colour + height)
+  python3 vm2.py map-render-real <gamedir> <map#> <out.png> [scale]   real tile graphics
+  python3 vm2.py editor <gamedir> <out.html>           self-contained browser map editor (all maps + tilesets embedded)
   python3 vm2.py masters <gamedir>                     dump the 38 enemy masters (name/class/description)
   python3 vm2.py natials <Vmtv2.exe>                   24 natial stat records from the EXE (.data 0x46DE80)
   python3 vm2.py natials-export <Vmtv2.exe> <out.json>
@@ -149,13 +151,18 @@ def cmd_map_import(injson, moddir):
     assert len(grid) == 1024
     open(os.path.join(moddir, 'DATA10', f'{doc["tilemap_entry"]:03d}.bin'), 'wb').write(struct.pack('<1024H', *grid))
     print('tilemap ->', f'DATA10/{doc["tilemap_entry"]:03d}.bin')
-    if doc.get('header_src'):
-        hd = bytearray(open(doc['header_src'], 'rb').read())
+    if doc.get('header_b64') and not doc.get('header_src'):
+        import base64; doc['header_src'] = None; hd0 = base64.b64decode(doc['header_b64'])
+    else: hd0 = open(doc['header_src'], 'rb').read() if doc.get('header_src') else None
+    if hd0 is not None:
+        hd = bytearray(hd0)
         h = map_header(bytes(hd))
         hd[0:16] = doc['name'].encode('cp949', 'replace')[:15].ljust(16, b'\0')
         limit = (h['desc2_off'] if h['desc2_off'] > 0 else len(hd)) - h['desc_off']
         write_text_into(hd, h['desc_off'], doc['desc'], limit)
         if h['desc2_off'] > 0: write_text_into(hd, h['desc2_off'], doc['desc2'], len(hd) - h['desc2_off'])
+        if doc.get('target_tilemap_entry') is not None:  # copying into another slot: point the header at that slot's tilemap entry
+            struct.pack_into('<I', hd, 16 + 5 * 4, (10 << 16) | doc['target_tilemap_entry'])
         open(os.path.join(moddir, 'DATA10', f'{doc["map"]:03d}.bin'), 'wb').write(hd)
         print('header ->', f'DATA10/{doc["map"]:03d}.bin')
 
@@ -176,6 +183,91 @@ def cmd_map_render(gamedir, n, out):
             dr.polygon(pts, fill=col, outline=(20, 20, 30))
             if t['height']: dr.text((cx - 3, cy - 5), str(t['height']), fill=(0, 0, 0))
     img.save(out); print('wrote', out)
+
+
+# ---------------- real tile rendering ----------------
+CHUNK_W, CHUNK_H = 24, 12          # atlas chunk (slab) size
+HEX_W, ROW_STEP, ODD_OFF = 48, 18, 24
+
+
+def tileset_of(ents, mapidx):
+    h = map_header(dec(ents[mapidx]))
+    _, img = rid(h['ids'][2]); _, pal = rid(h['ids'][3]); _, di = rid(h['ids'][4]); _, gi = rid(h['ids'][5])
+    return h, dec(ents[img]), dec(ents[pal]), dec(ents[di]), gi
+
+
+def palette_rgba(pal):
+    cols = [(pal[i + 2], pal[i + 1], pal[i]) for i in range(0, len(pal), 4)]
+    lut = [(0, 0, 0, 0)] * 256
+    for v in range(17, 256):
+        i = v - 17
+        lut[v] = cols[i] + (255,) if i < len(cols) else (min(255, (v - 16) * 2 + 40),) * 3 + (255,)
+    return lut
+
+
+def atlas_image(atlas, pal):
+    """whole atlas as one RGBA image, chunks stacked vertically (24 x 12*N)"""
+    from PIL import Image
+    lut = palette_rgba(pal); n = len(atlas) // (CHUNK_W * CHUNK_H)
+    img = Image.new('RGBA', (CHUNK_W, CHUNK_H * n))
+    img.putdata([lut[v] for v in atlas[:CHUNK_W * CHUNK_H * n]])
+    return img, n
+
+
+def render_tile(img, n, defs, idx, night=False):
+    """48 x (12*24) RGBA tile image; slot k of each column is drawn at row (23-k) (bottom-up)."""
+    from PIL import Image
+    out = Image.new('RGBA', (HEX_W, CHUNK_H * 24), (0, 0, 0, 0))
+    for half in (0, 1):
+        ids = struct.unpack_from('<24H', defs, idx * 100 + half * 48)
+        for k, i in enumerate(ids):
+            if i == 0x7ff or i >= n: continue
+            out.alpha_composite(img.crop((0, i * CHUNK_H, CHUNK_W, (i + 1) * CHUNK_H)), (half * CHUNK_W, (23 - k) * CHUNK_H))
+    return out
+
+
+def cmd_map_render_real(gamedir, n, out, scale=2):
+    from PIL import Image
+    n = int(n); ents = load(gamedir, 'DATA10'); h, atlas, pal, defs, gi = tileset_of(ents, n)
+    grid = struct.unpack('<1024H', dec(ents[gi]))
+    img, cnt = atlas_image(atlas, pal); cache = {}
+    W = 32 * HEX_W + ODD_OFF + 16; H = 32 * ROW_STEP + 24 * CHUNK_H + 16
+    canvas = Image.new('RGBA', (W, H), (12, 12, 20, 255))
+    for r in range(32):
+        for c in range(32):
+            t = grid[r * 32 + c]
+            if t not in cache: cache[t] = render_tile(img, cnt, defs, t)
+            tile = cache[t]; base = r * ROW_STEP + 24 * CHUNK_H + 8
+            canvas.alpha_composite(tile, (c * HEX_W + (r % 2) * ODD_OFF + 8, base - tile.height))
+    # crop empty top
+    bbox = canvas.getbbox()
+    if scale != 1: canvas = canvas.resize((canvas.width * scale, canvas.height * scale), Image.NEAREST)
+    canvas.save(out); print('wrote', out, canvas.size, h['name'])
+
+
+def cmd_editor(gamedir, out):
+    """Generate a self-contained HTML map editor with every tileset + map embedded."""
+    import base64, io
+    from PIL import Image
+    ents = load(gamedir, 'DATA10')
+    tilesets = {}; maps = []
+    for n in range(MAP_COUNT):
+        hd = dec(ents[n]); h = map_header(hd)
+        _, img_i = rid(h['ids'][2]); _, pal_i = rid(h['ids'][3]); _, di = rid(h['ids'][4]); _, gi = rid(h['ids'][5])
+        key = f'{img_i}'
+        if key not in tilesets:
+            img, cnt = atlas_image(dec(ents[img_i]), dec(ents[pal_i]))
+            buf = io.BytesIO(); img.save(buf, 'PNG')
+            defs = tiledefs(dec(ents[di]))
+            tilesets[key] = {'atlas': 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode(), 'chunks': cnt,
+                             'defs': [[d['left'], d['right'], d['base'], d['height'], d['terrain'], d['flags']] for d in defs],
+                             'img': img_i, 'pal': pal_i, 'defs_entry': di}
+        maps.append({'map': n, 'name': h['name'], 'desc': h['desc'], 'desc2': h['desc2'], 'tileset': key, 'tilemap_entry': gi, 'tiledef_entry': di,
+                     'grid': list(struct.unpack('<1024H', dec(ents[gi]))), 'header_b64': base64.b64encode(hd).decode()})
+    data = json.dumps({'tilesets': tilesets, 'maps': maps, 'terrain': TERRAIN}, ensure_ascii=False)
+    tpl = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'editor.html'), encoding='utf-8').read()
+    open(out, 'w', encoding='utf-8').write(tpl.replace('/*__DATA__*/null', data))
+    print('wrote', out, f'({os.path.getsize(out) // 1024} KB)')
 
 
 # ---------------- natial stats (EXE) ----------------
@@ -293,6 +385,8 @@ if __name__ == '__main__':
         elif c == 'map-export': cmd_map_export(a[1], a[2], a[3])
         elif c == 'map-import': cmd_map_import(a[1], a[2])
         elif c == 'map-render': cmd_map_render(a[1], a[2], a[3])
+        elif c == 'map-render-real': cmd_map_render_real(a[1], a[2], a[3], int(a[4]) if len(a) > 4 else 2)
+        elif c == 'editor': cmd_editor(a[1], a[2])
         elif c == 'masters': cmd_masters(a[1])
         elif c == 'natials': cmd_natials(a[1])
         elif c == 'natials-export': cmd_natials_export(a[1], a[2])
