@@ -214,13 +214,25 @@ function spriteFrame(entry: number, frame: number): HTMLCanvasElement | null {
 }
 const midi = new MidiPlayer();
 const spriteEntryFor = (k: number) => edits.spriteMap?.[k] ?? NATIAL_SPRITE[k];
+/** animated preview cycling through the given frames (driven by one shared timer) */
+const anims: { c: HTMLCanvasElement; entry: number; frames: number[] }[] = [];
+let animFps = 8;
+function animOf(entry: number, frames: number[], scale = 2): HTMLCanvasElement {
+  const c = document.createElement('canvas'); c.width = 96 * scale; c.height = 96 * scale; c.className = 'anim'; c.title = `#${entry} 연속재생`;
+  anims.push({ c, entry, frames }); return c;
+}
+let animTick = 0;
+setInterval(() => {
+  if ($('tab-sprites').classList.contains('hidden') || !anims.length) return; animTick++;
+  for (const a of anims) { if (!a.c.isConnected) continue; const f = a.frames[animTick % a.frames.length]; const src = spriteFrame(a.entry, f); const g = a.c.getContext('2d')!; g.imageSmoothingEnabled = false; g.clearRect(0, 0, a.c.width, a.c.height); if (src) g.drawImage(src, 0, 0, a.c.width, a.c.height); g.fillStyle = '#ffd24a'; g.font = '10px monospace'; g.fillText(`${f}`, 2, 10); }
+}, 1000 / animFps);
 function stripOf(entry: number, frames: number[], scale = 1): HTMLElement {
   const box = document.createElement('div'); box.className = 'strip';
   for (const f of frames) { const c = spriteFrame(entry, f); if (!c) continue; const t = document.createElement('canvas'); t.width = 96 * scale; t.height = 96 * scale; t.title = `#${entry} frame ${f}`; const g = t.getContext('2d')!; g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, t.width, t.height); box.appendChild(t); }
   return box;
 }
 function buildSprites() {
-  const mapEl = $('spriteMap'), allEl = $('spriteAll'); mapEl.innerHTML = ''; allEl.innerHTML = '';
+  const mapEl = $('spriteMap'), allEl = $('spriteAll'); mapEl.innerHTML = ''; allEl.innerHTML = ''; anims.length = 0;
   if (!loaded || !data.has('DATA02')) { mapEl.innerHTML = '<p class="muted">DATA00.DAT + DATA02.DAT를 넣으면 스프라이트가 나옵니다.</p>'; return; }
   const entries: number[] = []; data.entries.DATA02.forEach((e, i) => { if (i % 2 === 0 && e.length && data.entries.DATA02[i + 1]?.length) entries.push(i); });
   const nats = data.natials();
@@ -229,12 +241,12 @@ function buildSprites() {
     const tr = document.createElement('tr'); const cur = spriteEntryFor(k);
     tr.innerHTML = `<td>${k}</td><td class="port"></td><td class="l">${nats[k]?.name ?? ''}</td><td><select>${entries.map((e) => `<option value="${e}" ${e === cur ? 'selected' : ''}>${e}</option>`).join('')}</select></td><td class="l strip-cell"></td>`;
     const pc = portrait(k); if (pc) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.getContext('2d')!.drawImage(pc, 0, 0, 48, 48 * pc.height / pc.width); tr.querySelector('.port')!.appendChild(t); }
-    const cell = tr.querySelector('.strip-cell')!; cell.appendChild(stripOf(cur, [0, 1, 2, 3, 4, 5]));
-    tr.querySelector('select')!.onchange = (ev) => { const v = +(ev.target as HTMLSelectElement).value; edits.spriteMap = { ...(edits.spriteMap ?? {}), [k]: v }; saveEdits(); cell.innerHTML = ''; cell.appendChild(stripOf(v, [0, 1, 2, 3, 4, 5])); };
+    const cell = tr.querySelector('.strip-cell')!; cell.appendChild(animOf(cur, Array.from({ length: 18 }, (_, i) => i), 1)); cell.appendChild(stripOf(cur, [0, 1, 2, 3, 4, 5]));
+    tr.querySelector('select')!.onchange = (ev) => { const v = +(ev.target as HTMLSelectElement).value; edits.spriteMap = { ...(edits.spriteMap ?? {}), [k]: v }; saveEdits(); cell.innerHTML = ''; cell.appendChild(animOf(v, Array.from({ length: 18 }, (_, i) => i), 1)); cell.appendChild(stripOf(v, [0, 1, 2, 3, 4, 5])); };
     tbl.appendChild(tr);
   }
   mapEl.appendChild(tbl);
-  for (const e of entries) { const row = document.createElement('div'); row.className = 'sprow'; const lab = document.createElement('div'); lab.className = 'muted small'; lab.textContent = `#${e}` + (e < 72 ? ` (마스터 ${Math.floor(e / 4)}${e % 4 ? ' 빨강' : ' 파랑'})` : ''); row.appendChild(lab); row.appendChild(stripOf(e, Array.from({ length: 18 }, (_, i) => i))); allEl.appendChild(row); }
+  for (const e of entries) { const row = document.createElement('div'); row.className = 'sprow'; const lab = document.createElement('div'); lab.className = 'muted small'; lab.textContent = `#${e}` + (e < 72 ? ` (마스터 ${Math.floor(e / 4)}${e % 4 ? ' 빨강' : ' 파랑'})` : ''); row.appendChild(lab); const body = document.createElement('div'); body.className = 'sprow-body'; body.appendChild(animOf(e, Array.from({ length: 18 }, (_, i) => i))); body.appendChild(stripOf(e, Array.from({ length: 18 }, (_, i) => i))); row.appendChild(body); allEl.appendChild(row); }
 }
 function midFiles(): string[] { return loaded ? Object.keys(data.extra).filter((n) => n.endsWith('.MID')).sort() : []; }
 function portrait(k: number): HTMLCanvasElement | null {
