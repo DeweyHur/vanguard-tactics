@@ -172,26 +172,44 @@ export function initBattle(deps: BattleDeps) {
     g.restore();
   }
 
-  const portraitHtml = (id: string) => (id.startsWith('n') && deps.portrait(+id.slice(1)) ? `<div class="pbox" data-k="${id.slice(1)}"></div>` : '');
-  function mountPortrait(box: HTMLElement) { const c = deps.portrait(+box.dataset.k!); if (!c) return; const t = document.createElement('canvas'); const h = 150; t.height = h; t.width = Math.round(c.width * h / c.height); t.getContext('2d')!.drawImage(c, 0, 0, t.width, h); box.appendChild(t); }
-  const unitHtml = (u: Unit) => `${portraitHtml(u.def.id)}<b>${u.def.name}</b> <span class="e${u.def.element}">${ELEMENT[u.def.element] ?? ''}</span> Lv${u.level}${u.def.light ? ` <span class="muted small">${u.def.light === 1 ? '주간형' : '야간형'}</span>` : ''}<br>♥ ${u.hp}/${RULES.hp} · ⚔${b!.stat(u, 0)} 🛡${b!.stat(u, 1)} ✨${b!.stat(u, 2)} 🔰${b!.stat(u, 3)} 👢${b!.stat(u, 4)} · 이동 ${u.def.move}${u.def.range > 1 ? ` 사정 ${u.def.range}` : ''}${u.def.spell ? ' · 마법' : ''}<br><span class="muted">⏳ OA ${u.oa} · 유지 ${u.def.upkeep}</span>`;
+  const portraitHtml = (id: string, h = 96) => (id.startsWith('n') && deps.portrait(+id.slice(1)) ? `<div class="pbox" data-k="${id.slice(1)}" data-h="${h}"></div>` : '');
+  function mountPortrait(box: HTMLElement) { const c = deps.portrait(+box.dataset.k!); if (!c) return; const t = document.createElement('canvas'); const h = +(box.dataset.h ?? 96); t.height = h; t.width = Math.round(c.width * h / c.height); t.getContext('2d')!.drawImage(c, 0, 0, t.width, h); box.appendChild(t); }
+  const statGrid = (v: number[]) => `<div class="ustat"><span><b>${v[0]}</b>⚔ 공격</span><span><b>${v[1]}</b>🛡 방어</span><span><b>${v[2]}</b>✨ 마공</span><span><b>${v[3]}</b>🔰 마방</span><span><b>${v[4]}</b>👢 속도</span></div>`;
+  const hpBar = (hp: number) => `<div class="hp">${Array.from({ length: RULES.hp }, (_, i) => `<i class="${i < hp ? 'on' : ''}"></i>`).join('')}</div>`;
+  const unitHtml = (u: Unit) => `${portraitHtml(u.def.id, 72)}<b>${u.def.name}</b> <span class="e${u.def.element}">${ELEMENT[u.def.element] ?? ''}</span> <span class="muted">Lv${u.level}${u.def.light ? ` · ${u.def.light === 1 ? '주간형' : '야간형'}` : ''}</span>${hpBar(u.hp)}${statGrid([0, 1, 2, 3, 4].map((k) => b!.stat(u, k)))}<div class="muted small" style="margin-top:4px">이동 ${u.def.move}${u.def.range > 1 ? ` · 사정 ${u.def.range}` : ''}${u.def.spell ? ' · 마법' : ''} · 다음 행동까지 ${u.oa}분${u.def.upkeep ? ` · 유지 ${u.def.upkeep}` : ''}</div>`;
+  const natialHtml = (n: UnitDef) => `${portraitHtml(n.id, 72)}<b>${n.name}</b> <span class="e${n.element}">${ELEMENT[n.element] ?? ''}</span>${n.light ? ` <span class="muted">${n.light === 1 ? '주간형' : '야간형'}</span>` : ''}${statGrid(n.stats.map((v) => v[0]))}<div class="muted small" style="margin-top:4px">Lv2/3: ${n.stats.map((v) => `${v[1]}/${v[2]}`).join(' · ')}<br>이동 ${n.move} · 사정 ${n.range}${n.spell ? ' · 마법' : ''} · 소환 <b>${b!.summonCost(n)} MP</b> · 유지 ${n.upkeep}/시간</div>`;
+  const mountAll = (el: HTMLElement) => el.querySelectorAll<HTMLElement>('.pbox').forEach(mountPortrait);
+  function openSummon() { const me = mine(); if (!me || !me.def.master) return; buildSummonList(); $('bSummonPop').classList.remove('hidden'); }
+  function closeSummon() { $('bSummonPop').classList.add('hidden'); }
+  function buildSummonList() {
+    const sm = $('bSummon'), info = $('bSummonInfo'); const s = b!.s; const me = mine(); const canSummon = !!me && !!me.def.master;
+    $('bSummonMp').textContent = `MP ${s.mp[0]}/${s.mpMax[0]}`;
+    sm.innerHTML = b!.natials.map((n, i) => { const cost = b!.summonCost(n); return `<button data-i="${i}" class="${i === summonIdx ? 'sel' : ''}" ${!canSummon || cost > s.mp[0] || !b!.summonCells(0, n).length ? 'disabled' : ''}><span class="pthumb" data-k="${n.id.slice(1)}"></span><span><span class="e${n.element}">${ELEMENT[n.element]?.[0] ?? ''}</span> ${n.name}</span><span class="cost">${cost} MP</span></button>`; }).join('');
+    sm.querySelectorAll<HTMLElement>('.pthumb').forEach((t) => { const c = deps.portrait(+t.dataset.k!); if (!c) return; const cv = document.createElement('canvas'); cv.width = 48; cv.height = 48; cv.getContext('2d')!.drawImage(c, 0, 0, 48, 48 * c.height / c.width); t.appendChild(cv); });
+    sm.querySelectorAll<HTMLButtonElement>('button').forEach((bt) => {
+      bt.onclick = () => { summonIdx = +bt.dataset.i!; magicMode = false; closeSummon(); refresh(); draw(); };
+      bt.onmouseenter = () => { info.innerHTML = natialHtml(b!.natials[+bt.dataset.i!]); mountAll(info); };
+    });
+  }
   function refresh() {
-    const info = $('bInfo'), ui = $('bUnit'), sm = $('bSummon');
-    if (!b) { info.textContent = ''; ui.textContent = ''; sm.innerHTML = ''; $('bLog').textContent = ''; $('bOrder').innerHTML = ''; return; }
+    const info = $('bInfo'), ui = $('bUnit');
+    if (!b) { info.textContent = ''; ui.textContent = ''; $('bSummon').innerHTML = ''; $('bLog').textContent = ''; $('bOrder').innerHTML = ''; closeSummon(); return; }
     const s = b.s; const st = (side: 0 | 1) => Object.values(s.stones).filter((o) => o === side).length; const L = lightAt(s.clock);
     const act = active();
-    info.innerHTML = `${s.winner >= 0 ? `<b style="color:var(--acc)">${s.names[s.winner as 0 | 1]} 승리!</b> · ` : ''}🕒 <b>${clockText(s.clock)}</b> ${L === 0 ? '☀ 낮' : L === 2 ? '🌙 밤' : '🌤 어스름'}${act ? ` · <b>${act.def.name}</b>${act.side === 0 ? ' (내 차례)' : ' (봇)'}` : ''}<br><span class="e2">${s.names[0]}</span> MP ${s.mp[0]}/${s.mpMax[0]} 석 ${st(0)} · <span class="e3">${s.names[1]}</span> MP ${s.mp[1]}/${s.mpMax[1]} 석 ${st(1)}`;
+    info.innerHTML = `${s.winner >= 0 ? `<b style="color:var(--acc)">${s.names[s.winner as 0 | 1]} 승리!</b><br>` : ''}🕒 <b>${clockText(s.clock)}</b> ${L === 0 ? '☀ 낮' : L === 2 ? '🌙 밤' : '🌤 어스름'}${act ? ` · <b>${act.def.name}</b>${act.side === 0 ? ' 차례' : ' (봇)'}` : ''}<br><span class="e2">${s.names[0]}</span> MP ${s.mp[0]}/${s.mpMax[0]} · 석 ${st(0)}<br><span class="e3">${s.names[1]}</span> MP ${s.mp[1]}/${s.mpMax[1]} · 석 ${st(1)}`;
     $('bOrder').innerHTML = b.order(8).map(({ u, at }) => `<span class="ord ${u.side === 0 ? 'e2' : 'e3'}${u === act ? ' now' : ''}" title="${u.def.name}">${u.def.name.slice(0, 4)}<small>${clockText(at)}</small></span>`).join('');
-    ui.innerHTML = act ? unitHtml(act) : '<span class="muted">…</span>'; ui.querySelectorAll<HTMLElement>('.pbox').forEach(mountPortrait);
+    ui.innerHTML = act ? unitHtml(act) : '<span class="muted">…</span>'; mountAll(ui);
+    if (summonIdx >= 0) ui.innerHTML += `<div class="small" style="margin-top:6px;color:var(--acc)">소환: ${b.natials[summonIdx].name} — 초록 칸을 클릭 (우클릭 취소)</div>`;
     const me = mine(); const canSummon = !!me && !!me.def.master;
-    sm.innerHTML = b.natials.map((n, i) => { const cost = b!.summonCost(n); return `<button data-i="${i}" class="${i === summonIdx ? 'sel' : ''}" ${!canSummon || cost > s.mp[0] || !b!.summonCells(0, n).length ? 'disabled' : ''} title="⚔${n.stats[0][0]} 🛡${n.stats[1][0]} ✨${n.stats[2][0]} 🔰${n.stats[3][0]} 👢${n.stats[4][0]} 이동 ${n.move} 유지 ${n.upkeep}/시간"><span class="e${n.element}">${ELEMENT[n.element]?.[0] ?? ''}</span> ${n.name} ${cost}</button>`; }).join('');
-    sm.querySelectorAll<HTMLButtonElement>('button').forEach((bt) => { bt.onclick = () => { summonIdx = summonIdx === +bt.dataset.i! ? -1 : +bt.dataset.i!; magicMode = false; refresh(); draw(); };
-      bt.onmouseenter = () => { const n = b!.natials[+bt.dataset.i!]; ui.innerHTML = `${portraitHtml(n.id)}<b>${n.name}</b> <span class="e${n.element}">${ELEMENT[n.element] ?? ''}</span>${n.light ? ` <span class="muted small">${n.light === 1 ? '주간형' : '야간형'}</span>` : ''}<br>⚔${n.stats[0].join('/')} 🛡${n.stats[1].join('/')} ✨${n.stats[2].join('/')} 🔰${n.stats[3].join('/')} 👢${n.stats[4].join('/')}<br>이동 ${n.move} 사정 ${n.range}${n.spell ? ' · 마법' : ''} · 소환 ${b!.summonCost(n)} MP · 유지 ${n.upkeep}/시간`; ui.querySelectorAll<HTMLElement>('.pbox').forEach(mountPortrait); };
-      bt.onmouseleave = () => { ui.innerHTML = act ? unitHtml(act) : ''; ui.querySelectorAll<HTMLElement>('.pbox').forEach(mountPortrait); }; });
+    $<HTMLButtonElement>('bSummonBtn').disabled = !canSummon; $('bSummonBtn').classList.toggle('sel', summonIdx >= 0);
     $<HTMLButtonElement>('bMagic').disabled = !me || !me.def.spell; $('bMagic').classList.toggle('sel', magicMode);
     $<HTMLButtonElement>('bEnd').disabled = !me;
+    if (!$('bSummonPop').classList.contains('hidden')) buildSummonList();
     $('bLog').textContent = s.log.slice(-14).join('\n'); $('bLog').scrollTop = 1e6;
   }
+  $('bSummonBtn').onclick = () => { if (summonIdx >= 0) { summonIdx = -1; refresh(); draw(); } else openSummon(); };
+  $('bSummonClose').onclick = closeSummon;
+  $('bSummonPop').onclick = (e) => { if (e.target === $('bSummonPop')) closeSummon(); };
 
   // --- input ---
   const toWorld = (e: MouseEvent) => { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left + cam.x) / cam.z, y: (e.clientY - r.top + cam.y) / cam.z }; };

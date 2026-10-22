@@ -39,8 +39,17 @@ td input { width: 56px; padding: 1px 3px; text-align: right; } td input.chg { bo
 #bwrap { flex: 1; position: relative; overflow: hidden; background: #0a0b0e; }
 #bmap { position: absolute; left: 0; top: 0; image-rendering: pixelated; cursor: crosshair; }
 #bhud { position: absolute; left: 8px; bottom: 6px; color: var(--acc); font-size: 11px; pointer-events: none; text-shadow: 0 1px 2px #000; }
-#bSummon { padding: 6px 8px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px; }
-#bSummon button { font-size: 11px; padding: 2px 5px; } #bSummon button.sel { background: var(--acc); color: #000; }
+#bwrap { position: relative; }
+#bSummonPop { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 5; }
+#bSummonPop .pop { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; width: min(720px, 92%); max-height: 90%; display: flex; flex-direction: column; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+.pop-head { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+#bSummon { padding: 8px 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; overflow: auto; }
+#bSummon button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; font-size: 11px; line-height: 1.2; } #bSummon button canvas { display: block; image-rendering: pixelated; } #bSummon button .cost { color: var(--acc); font-weight: bold; } #bSummon button.sel { background: var(--acc); color: #000; }
+#bSummonInfo { padding: 8px 10px; border-top: 1px solid var(--line); min-height: 64px; }
+#bSummonInfo .pbox { float: right; margin: 0 0 0 8px; }
+#bUnit { min-height: 48px; } .ustat { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; margin-top: 4px; font-size: 11px; text-align: center; } .ustat b { display: block; font-size: 13px; }
+.hp { display: flex; gap: 2px; margin: 4px 0; } .hp i { width: 10px; height: 8px; background: #333; border-radius: 1px; } .hp i.on { background: #ffd24a; }
+#bActions .row + .row { margin-top: 4px; }
 #bLog { margin: 0; padding: 8px; font-size: 11px; color: var(--mut); white-space: pre-wrap; flex: 1; overflow: auto; }
 .e1 { color: #c9a35a; } .e2 { color: #6ab0ff; } .e3 { color: #ff7a5c; } .e4 { color: #b9f; }
 .pbox { float: right; margin: 0 0 4px 6px; } .pbox canvas { display: block; } td.port canvas { display: block; }
@@ -52,3 +61,4 @@ td input { width: 56px; padding: 1px 3px; text-align: right; } td input.chg { bo
 .dircell .row { gap: 2px; } .dircell select { font-size: 11px; }
 .gallery { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; } .gal { width: 96px; padding: 4px; border: 1px solid var(--line); border-radius: 4px; background: #15171d; cursor: pointer; text-align: center; } .gal:hover { border-color: var(--acc); } .gal.sel { border-color: var(--acc); background: #22262f; }
 .gal .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .thumb { image-rendering: pixelated; background: #2b2f3a; } tr.clickable { cursor: pointer; } tr.clickable:hover td { background: #1c1f27; }
+#bSummon button .pthumb canvas { width: 48px; height: 48px; } #bSummonBtn.sel { background: var(--acc); color: #000; }
