@@ -118,7 +118,7 @@ export class VM2Data {
       const grid = new Uint8Array(144 * 96).fill(16);
       for (let rec = 0; rec < 2; rec++) for (let s = 0; s < 48; s++) {
         const i = dv.getUint16((p * 2 + rec) * 96 + s * 2, true); if (i === 0x7ff || i >= n) continue;
-        const cx = (s >> 3) * 24, cy = (7 - (s & 7)) * 12;
+        const cx = (((s >> 3) + 5) % 6) * 24, cy = (7 - (s & 7)) * 12; // slot column 0 is the right half of the third frame
         for (let y = 0; y < 12; y++) grid.set(atlas.subarray(i * 288 + y * 24, i * 288 + y * 24 + 24), (cy + y) * 144 + cx);
       }
       for (let f = 0; f < 3; f++) { const fr = new Uint8Array(48 * 96); for (let y = 0; y < 96; y++) fr.set(grid.subarray(y * 144 + f * 48, y * 144 + f * 48 + 48), y * 48); frames.push(fr); }
