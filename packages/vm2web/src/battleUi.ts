@@ -3,7 +3,7 @@ import { TileRenderer, drawMap, worldSize, pickCell, cellOrigin, hexPath } from 
 import { Battle, reachableFrom, masterDef, dirOf, type UnitDef, type Unit, type Terrain } from './battle/engine';
 import { botAct } from './battle/bot';
 import { key, dist, type Cell } from './battle/hex';
-import { RULES, clockText, lightAt } from './battle/rules';
+import { RULES, clockText, lightAt, elemAdv } from './battle/rules';
 import type { Sfx } from './sound';
 import type { Facing } from './facing';
 
@@ -215,6 +215,49 @@ export function initBattle(deps: BattleDeps) {
   const mountAll = (el: HTMLElement) => el.querySelectorAll<HTMLElement>('.pbox').forEach(mountPortrait);
   /** MP change on the hour for a side: regen (stones + 2) x MAG minus the upkeep of its natials */
   const hourly = (side: 0 | 1) => { const m = b!.master(side); const stones = Object.values(b!.s.stones).filter((o) => o === side).length; const regen = (stones + 2) * b!.stat(m, 2); const upkeep = b!.alive().filter((u) => u.side === side && !u.def.master).reduce((a, u) => a + u.def.upkeep, 0); return { regen, upkeep, net: regen - upkeep }; };
+  /** damage of a -> d for every facing of the defender: [frontal, side, rear] */
+  function dmgRange(a: Unit, d: Unit, magic: boolean): { now: number; front: number; side: number; rear: number } {
+    const nowD = b!.damage(a, d, magic); const f0 = d.facing; const out = { now: nowD, front: 0, side: 0, rear: 0 };
+    const toward = dirOf(d, a); d.facing = toward; out.front = b!.damage(a, d, magic); d.facing = (toward + 2) % 6; out.side = b!.damage(a, d, magic); d.facing = (toward + 3) % 6; out.rear = b!.damage(a, d, magic); d.facing = f0; return out;
+  }
+  const relName = (a: Unit, d: Unit) => { const rel = ((dirOf(d, a) - d.facing) % 6 + 6) % 6; return rel === 3 ? '후방' : rel === 2 || rel === 4 ? '측면' : rel === 0 ? '정면' : '전방'; };
+  /** two units' stats as paired bars (mine grows left, theirs right) and the damage both ways */
+  function compareHtml(me: Unit, t: Unit, magic: boolean, probe?: Unit): string {
+    const a = probe ?? me; const mx = statMax(); const mine = [0, 1, 2, 3, 4].map((k) => b!.stat(a, k)), theirs = [0, 1, 2, 3, 4].map((k) => b!.stat(t, k));
+    const rows = STAT_NAME.map((nm, k) => { const w1 = Math.min(100, mine[k] / mx[k] * 100), w2 = Math.min(100, theirs[k] / mx[k] * 100); const win = mine[k] > theirs[k] ? 'l' : mine[k] < theirs[k] ? 'r' : ''; return `<div class="cmp ${STAT_CLS[k]} ${win}"><b class="cl">${mine[k]}</b><span class="cb cbl"><i style="width:${w1}%"></i></span><span class="cn">${nm}</span><span class="cb cbr"><i style="width:${w2}%"></i></span><b class="cr">${theirs[k]}</b></div>`; }).join('');
+    const d1 = dmgRange(a, t, magic); const hpAfter = Math.max(0, t.hp - d1.now);
+    const canCounter = !magic && dist(a, t) <= t.def.range; const d2 = canCounter ? dmgRange(t, a, false) : null;
+    const mods: string[] = []; const ea = elemAdv(a.def.element, t.def.element); if (ea) mods.push(`속성 ${ea > 0 ? '+' : '−'}${RULES.elemBonus}`);
+    const dh = b!.map.height(a.r, a.c) - b!.map.height(t.r, t.c); if (dh) mods.push(`높이 ${dh > 0 ? '+' : '−'}${RULES.heightBonus}`);
+    const td = RULES.terrainDef[b!.map.terrain(t.r, t.c)]; if (td) mods.push(`상대 지형 −${td}%`);
+    return `<div class="cmp-head"><span class="e2">${a.def.name}${probe ? ' (이동 후)' : ''}</span><span class="muted">vs</span><span class="e3">${t.def.name}</span></div>${rows}
+      <div class="dmg"><div>${magic ? '✨ 마법' : '⚔ 공격'} → <b class="big">${d1.now}</b> 피해 <span class="muted">(${relName(a, t)}${mods.length ? ' · ' + mods.join(' · ') : ''})</span> · 상대 HP ${t.hp} → <b class="${hpAfter === 0 ? 'neg' : ''}">${hpAfter === 0 ? '격파' : hpAfter}</b></div>
+      <div class="muted small">정면 ${d1.front} · 측면 ${d1.side} · 후방 ${d1.rear}</div>
+      <div style="margin-top:3px">${d2 ? `반격 받으면 ← <b class="big neg">${d2.now}</b> 피해 <span class="muted">(정면 ${d2.front} · 측면 ${d2.side} · 후방 ${d2.rear})</span> · 내 HP ${a.hp} → ${Math.max(0, a.hp - d2.now)}` : `<span class="muted">${magic ? '마법은 반격 없음' : '상대 사정거리 밖 — 반격 없음'}</span>`}</div></div>`;
+  }
+  /** what a reachable cell means for the active unit: terrain, defence, height and who it could hit from there */
+  function cellHtml(me: Unit, r: number, c: number): string {
+    const d = ts!.defs[grid![r * 32 + c]]; const td = RULES.terrainDef[d.terrain] ?? 0; const h = d.height, h0 = b!.map.height(me.r, me.c);
+    const probe: Unit = { ...me, r, c, facing: dirOf(me, { r, c }) };
+    const tg = b!.targetsFrom(probe, r, c); const threats = b!.alive().filter((o) => o.side !== me.side && dist(o, probe) <= o.def.range);
+    const stone = RULES.stoneElement[d.terrain] !== undefined ? ` · <b class="pos">마법석${b!.s.stones[key(r, c)] === me.side ? ' (내 것)' : ' 점령'}</b>` : '';
+    let html = `<div class="cmp-head"><span>📍 (${r},${c}) ${TERRAIN[d.terrain] ?? d.terrain}</span><span class="muted">높이 ${h}${h !== h0 ? ` (${h > h0 ? '+' : ''}${h - h0})` : ''}</span></div>
+      <div>받는 피해 <b class="${td ? 'pos' : ''}">${td ? `−${td}%` : '보정 없음'}</b>${stone}</div>`;
+    if (tg.length) html += `<div style="margin-top:4px">여기서 공격 가능: ${tg.map((t) => `<span class="e3">${t.def.name}</span> <b>${dmgRange(probe, t, false).now}</b>`).join(' · ')}</div>`;
+    if (threats.length) html += `<div class="muted small">여기를 노릴 수 있는 적: ${threats.map((t) => `${t.def.name} ${dmgRange(t, probe, false).now}`).join(' · ')}</div>`;
+    else html += `<div class="muted small">여기를 바로 노릴 수 있는 적 없음</div>`;
+    return html;
+  }
+  function refreshCompare() {
+    const el = $('bCompare'); const me = mine();
+    if (!b || !me || !hover || busy) { el.classList.add('hidden'); return; }
+    const u = b.unitAt(hover.r, hover.c);
+    if (u && u.side !== 0) { const ok = magicMode ? b.magicTargets(me).includes(u) : b.targetsFrom(me, me.r, me.c).includes(u); if (ok) { el.innerHTML = compareHtml(me, u, magicMode); el.classList.remove('hidden'); return; }
+      // not in range now: show what it would look like from the closest reachable cell
+      if (!magicMode && summonIdx < 0) { const rc = [...b.reachable(me).values()].filter((cl) => cl.from >= 0 && !b!.unitAt(cl.r, cl.c) && dist(cl, u) <= me.def.range); if (rc.length) { const cl = rc.sort((x, y) => dist(x, u) - dist(y, u))[0]; el.innerHTML = compareHtml(me, u, false, { ...me, r: cl.r, c: cl.c, facing: dirOf(cl, u) }); el.classList.remove('hidden'); return; } } }
+    if (!u && summonIdx < 0 && !magicMode && b.reachable(me).has(key(hover.r, hover.c)) && (hover.r !== me.r || hover.c !== me.c)) { el.innerHTML = cellHtml(me, hover.r, hover.c); el.classList.remove('hidden'); return; }
+    el.classList.add('hidden');
+  }
   const netHtml = (n: number) => `<span class="${n >= 0 ? 'pos' : 'neg'}" title="매 정각 MP 변화 = (마법석+2)×마력 − 유지MP 합">${n >= 0 ? '+' : ''}${n}/시</span>`;
   function openSummon() { const me = mine(); if (!me || !me.def.master) return; buildSummonList(); $('bSummonPop').classList.remove('hidden'); }
   function closeSummon() { $('bSummonPop').classList.add('hidden'); }
@@ -243,6 +286,7 @@ export function initBattle(deps: BattleDeps) {
     $<HTMLButtonElement>('bEnd').disabled = !me;
     if (!$('bSummonPop').classList.contains('hidden')) buildSummonList();
     $('bLog').textContent = s.log.slice(-14).join('\n'); $('bLog').scrollTop = 1e6;
+    refreshCompare();
   }
   $('bSummonBtn').onclick = () => { if (summonIdx >= 0) { summonIdx = -1; refresh(); draw(); } else openSummon(); };
   $('bSummonClose').onclick = closeSummon;
@@ -258,8 +302,9 @@ export function initBattle(deps: BattleDeps) {
   };
   canvas.onpointermove = (e) => {
     if (drag) { if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true; if (drag.moved) { cam.x = drag.cx - (e.clientX - drag.x); cam.y = drag.cy - (e.clientY - drag.y); draw(); return; } }
-    if (!ts || !grid) return; const p = toWorld(e); hover = pickCell(ts, grid, p.x, p.y); draw();
+    if (!ts || !grid) return; const p = toWorld(e); const h = pickCell(ts, grid, p.x, p.y); const changed = (h?.r !== hover?.r || h?.c !== hover?.c); hover = h; draw(); if (changed) refreshCompare();
   };
+  canvas.onpointerleave = () => { hover = null; refreshCompare(); draw(); };
   canvas.onpointerup = (e) => {
     const d = drag; drag = null; if (!d || d.moved || e.button !== 0) return;
     if (!b || !ts || !grid || busy) return;

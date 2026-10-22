@@ -69,3 +69,11 @@ td input { width: 56px; padding: 1px 3px; text-align: right; } td input.chg { bo
 .gr.atk { --gc: #e8623a; } .gr.def { --gc: #3f8ee8; } .gr.mag { --gc: #b067e8; } .gr.mdef { --gc: #3fc08a; } .gr.spd { --gc: #e8c33a; }
 .gr.top .gl, .gr.top b { color: #fff; font-weight: bold; } .gr.top .gb i { box-shadow: 0 0 6px var(--gc); }
 .pos { color: #6fd38a; } .neg { color: #ff7a7a; font-weight: bold; }
+.cmp-head { display: flex; justify-content: space-between; gap: 6px; font-weight: bold; margin-bottom: 4px; }
+.cmp { display: grid; grid-template-columns: 20px 1fr 44px 1fr 20px; align-items: center; gap: 4px; font-size: 11px; margin: 2px 0; }
+.cmp .cn { text-align: center; color: var(--mut); white-space: nowrap; } .cmp .cl { text-align: right; } .cmp .cr { text-align: left; }
+.cmp .cb { position: relative; height: 8px; background: #262a34; border-radius: 2px; overflow: hidden; } .cmp .cb i { position: absolute; top: 0; bottom: 0; background: var(--gc); opacity: .55; }
+.cmp .cbl i { right: 0; } .cmp .cbr i { left: 0; } .cmp.l .cbl i, .cmp.r .cbr i { opacity: 1; } .cmp.l .cl, .cmp.r .cr { color: #fff; font-weight: bold; }
+.cmp.atk { --gc: #e8623a; } .cmp.def { --gc: #3f8ee8; } .cmp.mag { --gc: #b067e8; } .cmp.mdef { --gc: #3fc08a; } .cmp.spd { --gc: #e8c33a; }
+.dmg { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 4px; font-size: 12px; } .big { font-size: 15px; }
+#bCompare { background: #15171d; }
