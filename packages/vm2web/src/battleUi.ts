@@ -15,7 +15,13 @@ export function initBattle(deps: BattleDeps) {
   const canvas = $<HTMLCanvasElement>('bmap'), wrap = $('bwrap'), g = canvas.getContext('2d')!;
   const world = document.createElement('canvas'); const ws = worldSize(); world.width = ws.w; world.height = ws.h; const wg = world.getContext('2d')!;
   const cam = { x: 0, y: 0, z: 2 };
-  let b: Battle | null = null, ts: Tileset | null = null, grid: Uint16Array | null = null, rend: TileRenderer | null = null, mapAnim: MapAnim | null = null;
+  let b: Battle | null = null, ts: Tileset | null = null, grid: Uint16Array | null = null, rend: TileRenderer | null = null, mapAnim: MapAnim | null = null, lastLight = -1;
+  /** (re)draw the world map with the palette tinted for the current light period */
+  function renderWorld() {
+    const d = deps.data(); if (!d || !b || !ts || !grid) return; const L = lightAt(b.s.clock); if (L === lastLight) return; lastLight = L;
+    const t = RULES.lightTint[L] ?? [1, 1, 1]; const lut = d.palette(ts.pal).slice(); for (let i = 0; i < 256; i++) { lut[i * 4] = Math.round(lut[i * 4] * t[0]); lut[i * 4 + 1] = Math.round(lut[i * 4 + 1] * t[1]); lut[i * 4 + 2] = Math.round(lut[i * 4 + 2] * t[2]); }
+    rend = new TileRenderer(ts, lut); wg.clearRect(0, 0, ws.w, ws.h); drawMap(wg, rend, grid); mapAnim = new MapAnim(ts, grid, lut, world);
+  }
   let summonIdx = -1, magicMode = false, hover: Cell | null = null, busy = false; let masterIdx: [number, number] = [0, 1];
   const attackAnim = new Map<number, { t0: number; dx: number; dy: number }>();
   const pops: { uid: number; text: string; t0: number }[] = [];
@@ -58,7 +64,7 @@ export function initBattle(deps: BattleDeps) {
   }
   let blinkTick = 0; const blinkOn = () => blinkTick % 9 === 0;
   const deaths = new Map<number, { t0: number; r: number; c: number; side: 0 | 1; id: string; facing: number }>();
-  setInterval(() => { if (!b || $('tab-battle').classList.contains('hidden')) return; blinkTick++; if (mapAnim && blinkTick % 2 === 0) mapAnim.tick(); draw(); }, 120);
+  setInterval(() => { if (!b || $('tab-battle').classList.contains('hidden')) return; blinkTick++; renderWorld(); if (mapAnim && blinkTick % 2 === 0) mapAnim.tick(); draw(); }, 120);
   let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { const t = now(); for (let i = pops.length - 1; i >= 0; i--) if (t - pops[i].t0 > 1100) pops.splice(i, 1); for (const [k, d] of deaths) if (t - d.t0 > 1400) deaths.delete(k); for (const [k, w] of walkAnim) if (t - w.t0 > (w.path.length - 1) * STEP_MS) walkAnim.delete(k); for (const [k, w] of summonAnim) if (t - w.t0 > SUMMON_MS) summonAnim.delete(k); for (const [k, w] of stoneAnim) if (t - w.t0 > STONE_MS) stoneAnim.delete(k); stepCam(); if (!attackAnim.size && !pops.length && !deaths.size && !walkAnim.size && !summonAnim.size && !stoneAnim.size && !camAnim) { clearInterval(animTimer); return; } draw(); }, 50); };
 
   const toUnitDef = (n: Natial): UnitDef => ({ id: `n${n.index}`, name: n.name, stats: n.stats, move: n.move, element: n.element, range: Math.max(1, n.range), moveType: Math.min(4, n.moveType), cost: n.cost, upkeep: Math.round(n.hp / RULES.upkeepDiv), spell: n.spell, light: n.flag1 });
@@ -89,7 +95,7 @@ export function initBattle(deps: BattleDeps) {
     const n0 = $<HTMLSelectElement>('bM0'), n1 = $<HTMLSelectElement>('bM1'); masterIdx = [+n0.value - 52, +n1.value - 52];
     b = new Battle(terrain, nats.map(toUnitDef), [findStart(terrain, { r: 5, c: 5 }), findStart(terrain, { r: 26, c: 26 })], [n0.selectedOptions[0].text, n1.selectedOptions[0].text], m.header.nums[3] >= 0 && m.header.nums[3] < 1440 ? m.header.nums[3] : RULES.startClock);
     (window as unknown as { __battle: Battle; __cam: typeof cam }).__battle = b; (window as unknown as { __cam: typeof cam }).__cam = cam; (window as unknown as { __cellScreen: (r: number, c: number) => { x: number; y: number } }).__cellScreen = (r, c) => { const p = center(r, c); return { x: p.x * cam.z - cam.x, y: p.y * cam.z - cam.y }; }; summonIdx = -1; magicMode = false; $('bsetup').classList.add('hidden');
-    wg.clearRect(0, 0, ws.w, ws.h); drawMap(wg, rend, grid); mapAnim = new MapAnim(ts, grid, d.palette(ts.pal), world); fit(); refresh(); deps.bgm(); runBots();
+    lastLight = -1; renderWorld(); fit(); refresh(); deps.bgm(); runBots();
   };
   $('bQuit').onclick = () => { b = null; deps.bgmStop(); $('bsetup').classList.remove('hidden'); refresh(); draw(); };
   $('bEnd').onclick = () => { const u = mine(); if (!u || busy) return; const err = b!.wait(u.uid); if (err) b!.log(`! ${err}`); else deps.sfx.role('turn'); afterAction(); };
@@ -139,7 +145,6 @@ export function initBattle(deps: BattleDeps) {
     g.imageSmoothingEnabled = false; g.fillStyle = '#0a0b0e'; g.fillRect(0, 0, canvas.width, canvas.height);
     if (!b || !ts || !grid) return;
     g.save(); g.translate(-cam.x, -cam.y); g.scale(cam.z, cam.z); g.drawImage(world, 0, 0);
-    const L = lightAt(b.s.clock); if (L) { g.fillStyle = L === 2 ? 'rgba(10,15,50,.45)' : 'rgba(40,20,50,.2)'; g.fillRect(cam.x / cam.z, cam.y / cam.z, canvas.width / cam.z, canvas.height / cam.z); }
     const tNow = now();
     for (const k of Object.keys(b.s.stones)) { const r = Math.floor(+k / 32), c = +k % 32; const own = b.s.stones[+k]; const p = center(r, c); const col = own === 0 ? '#4af' : own === 1 ? '#f66' : '#ee4';
       const sa = stoneAnim.get(+k); const age = sa ? tNow - sa.t0 : -1; const k1 = age >= 0 ? Math.min(1, age / STONE_MS) : 1;

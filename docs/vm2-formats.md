@@ -110,3 +110,6 @@ Sources: 나무위키 밴티지 마스터 택틱스 항목 (user-provided excerp
   the original is palette cycling. The map palette is laid out as 4-colour ramps from entry 3 (indices 20-23, 24-27 …);
   the workbench rotates the ramps that only water-type tiles use, plus the system palette's purple stone ramp
   (indices 104-107), every 240 ms (`MapAnim` in render.ts). Which ramps the original cycles is not stored anywhere obvious.
+- Time-of-day lighting: the same map (Silent Hill) is blue-grey at 11:15 and green-tinted at 4:45 in captures, with a
+  single palette in the data, so the game tints the map palette by period. Measured dawn multipliers against the day
+  colours: about (0.87, 0.96, 0.84) — `RULES.lightTint`; night is a guess.

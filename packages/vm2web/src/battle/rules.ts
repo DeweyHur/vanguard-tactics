@@ -17,6 +17,8 @@ export const RULES = {
   startClock: 7 * 60, day: [8 * 60, 16 * 60], dusk: [16 * 60, 20 * 60], night: [20 * 60, 4 * 60], dawn: [4 * 60, 8 * 60],
   /** light-typed natials (flag 1 = day type, 2 = night type) get +lightBonus to every stat in their period, -lightBonus in the opposite one */
   lightBonus: 2,
+  /** map palette multipliers by light period (0 day, 1 dawn/dusk, 2 night); dawn measured from a 4:45 capture vs 11:15 */
+  lightTint: { 0: [1, 1, 1], 1: [0.87, 0.96, 0.84], 2: [0.42, 0.47, 0.72] } as Record<number, number[]>,
   /** physical damage = ATK - DEF + 1; magic = MAG - MDEF + 1; then element, facing, terrain and height; min 1 */
   elemBonus: 2, sideBonus: 1, rearBonus: 2, heightBonus: 1,
   /** terrain id -> cost per move type (Infinity = impassable). order: 걷기, 걷기2, 헤엄, 헤엄2, 날기 */
