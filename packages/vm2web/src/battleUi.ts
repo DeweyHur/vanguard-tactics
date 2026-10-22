@@ -19,6 +19,17 @@ export function initBattle(deps: BattleDeps) {
   let sel: Unit | null = null, summonIdx = -1, hover: Cell | null = null, busy = false; let masterIdx: [number, number] = [0, 1];
   // facing (0..5 = frame group) and a short attack animation per unit
   const facing = new Map<number, number>(); const attackAnim = new Map<number, { t0: number; dx: number; dy: number }>();
+  // floating damage numbers (the original pops the number over the target for ~1 s)
+  const pops: { uid: number; text: string; t0: number }[] = [];
+  function popDamage(n0: number) {
+    let lastAttacker: Unit | undefined;
+    for (const line of b!.s.log.slice(n0)) {
+      const hit = /^(.+?) → (.+?) (\d+) 피해/.exec(line); const back = /^\s+반격 (\d+) 피해/.exec(line);
+      if (hit) { const t = b!.s.units.find((u) => u.def.name === hit[2]); lastAttacker = b!.s.units.find((u) => u.def.name === hit[1]); if (t) pops.push({ uid: t.uid, text: hit[3], t0: performance.now() }); }
+      else if (back && lastAttacker) pops.push({ uid: lastAttacker.uid, text: back[1], t0: performance.now() + 400 });
+    }
+    if (pops.length) kickAnim();
+  }
   /** hex direction from a -> b as a frame group: 0 W, 1 SW, 2 SE, 3 E, 4 NE, 5 NW (order as stored in DATA02) */
   function dirOf(a: Cell, b: Cell): number {
     const ax = a.c + (a.r & 1) * 0.5, bx = b.c + (b.r & 1) * 0.5; const dx = bx - ax, dy = b.r - a.r;
@@ -38,7 +49,7 @@ export function initBattle(deps: BattleDeps) {
   // the original flashes units that can still act: one translucent frame roughly every second
   let blinkTick = 0; const blinkOn = () => blinkTick % 9 === 0;
   setInterval(() => { if (!b || $('tab-battle').classList.contains('hidden')) return; const was = blinkOn(); blinkTick++; if (was !== blinkOn()) draw(); }, 120);
-  let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { if (!attackAnim.size) { clearInterval(animTimer); return; } draw(); }, 50); };
+  let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { const now = performance.now(); for (let i = pops.length - 1; i >= 0; i--) if (now - pops[i].t0 > 1100) pops.splice(i, 1); if (!attackAnim.size && !pops.length) { clearInterval(animTimer); return; } draw(); }, 50); };
 
   const toUnitDef = (n: Natial): UnitDef => ({ id: `n${n.index}`, name: n.name, hp: n.hp, stats: n.stats, move: n.move, element: n.element, range: Math.max(1, n.range), moveType: Math.min(4, n.moveType), cost: n.cost });
 
@@ -76,6 +87,7 @@ export function initBattle(deps: BattleDeps) {
     if (!b || busy || b.s.winner >= 0) return; sel = null; summonIdx = -1; b.endTurn(); deps.sfx.role('turn'); refresh(); draw();
     busy = true; await new Promise((r) => setTimeout(r, 300)); const n0 = b.s.log.length; if (b.s.side === 1 && b.s.winner < 0) botTurn(b); busy = false;
     for (const u of b.s.units) if (u.hp > 0 && u.side === 1) { let best: Unit | null = null, bd = 1e9; for (const o of b.s.units) if (o.hp > 0 && o.side === 0) { const d = Math.hypot(o.r - u.r, o.c - u.c); if (d < bd) { bd = d; best = o; } } if (best) facing.set(u.uid, dirOf(u, best)); }
+    popDamage(n0);
     const added = b.s.log.slice(n0); if (added.some((l) => l.includes('격파'))) deps.sfx.role('kill'); else if (added.some((l) => l.includes('피해'))) deps.sfx.role('attack'); else if (added.some((l) => l.includes('소환'))) deps.sfx.role('summon');
     refresh(); draw();
   };
@@ -126,6 +138,8 @@ export function initBattle(deps: BattleDeps) {
       if (u.level > 1 && sp) { g.fillStyle = '#ffd24a'; g.font = 'bold 9px monospace'; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillText(`L${u.level}`, p.x + 13, p.y + 11); }
       if (canAct && b.s.side === 0 && !sp) { g.fillStyle = '#fff'; g.beginPath(); g.arc(p.x + 14, p.y - 6, 3, 0, Math.PI * 2); g.fill(); }
     }
+    for (const pp of pops) { const u = b.unit(pp.uid); if (!u) continue; const age = performance.now() - pp.t0; if (age < 0) continue; const p = center(u.r, u.c); const y = p.y - 40 - Math.min(age, 300) / 300 * 14;
+      g.font = 'bold 14px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = '#000'; g.strokeText(pp.text, p.x, y); g.fillStyle = '#fff'; g.fillText(pp.text, p.x, y); }
     if (hover) { const p = center(hover.r, hover.c); hexPath(g, p.x, p.y); g.lineWidth = 1; g.strokeStyle = '#ff0'; g.stroke(); const d = ts.defs[grid[hover.r * 32 + hover.c]]; const u = b.unitAt(hover.r, hover.c); $('bhud').textContent = `(${hover.r},${hover.c}) ${TERRAIN[d.terrain] ?? d.terrain} 높이 ${d.height} 방어 ${RULES.terrainDef[d.terrain] ?? 0}%${u ? ` · ${u.def.name} HP ${u.hp}/${u.def.hp}` : ''}`; }
     g.restore();
   }
@@ -167,7 +181,7 @@ export function initBattle(deps: BattleDeps) {
     const u = b.unitAt(cell.r, cell.c); let err: string | null = null;
     const n0 = b.s.log.length;
     if (summonIdx >= 0) { err = b.summon(summonIdx, cell.r, cell.c); if (!err) { summonIdx = -1; deps.sfx.role('summon'); } }
-    else if (sel && u && u.side !== 0 && !sel.acted && b.targetsFrom(sel, sel.r, sel.c).includes(u)) { const atk = sel; err = b.attack(sel.uid, u.uid); if (!err) { facing.set(atk.uid, dirOf(atk, u)); facing.set(u.uid, dirOf(u, atk)); const ax = atk.c + (atk.r & 1) * 0.5, ux = u.c + (u.r & 1) * 0.5; attackAnim.set(atk.uid, { t0: performance.now(), dx: Math.sign(ux - ax), dy: Math.sign(u.r - atk.r) }); kickAnim(); const killed = b.s.log.slice(n0).some((l) => l.includes('격파')); if (!deps.sfx.attack(atk.def.id, masterIdx[0])) deps.sfx.role('attack'); if (killed) setTimeout(() => deps.sfx.role('kill'), 600); } if (sel.hp <= 0) sel = null; }
+    else if (sel && u && u.side !== 0 && !sel.acted && b.targetsFrom(sel, sel.r, sel.c).includes(u)) { const atk = sel; err = b.attack(sel.uid, u.uid); if (!err) { facing.set(atk.uid, dirOf(atk, u)); facing.set(u.uid, dirOf(u, atk)); const ax = atk.c + (atk.r & 1) * 0.5, ux = u.c + (u.r & 1) * 0.5; attackAnim.set(atk.uid, { t0: performance.now(), dx: Math.sign(ux - ax), dy: Math.sign(u.r - atk.r) }); kickAnim(); const killed = b.s.log.slice(n0).some((l) => l.includes('격파')); if (!deps.sfx.attack(atk.def.id, masterIdx[0])) deps.sfx.role('attack'); if (killed) setTimeout(() => deps.sfx.role('kill'), 600); popDamage(n0); } if (sel.hp <= 0) sel = null; }
     else if (sel && !u && !sel.moved && b.reachable(sel).has(key(cell.r, cell.c))) { const from = { r: sel.r, c: sel.c }; err = b.move(sel.uid, cell.r, cell.c); if (!err) facing.set(sel.uid, dirOf(from, cell)); }
     else if (u && u.side === 0) { sel = u; deps.sfx.role('select'); if (!u.moved && b.reachable(u).size <= 1) b.log(`! ${u.def.name}: 갈 수 있는 칸이 없음`); }
     else sel = null;
