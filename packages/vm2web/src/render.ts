@@ -63,3 +63,42 @@ export function portraitCanvas(p: { w: number; h: number; pixels: Uint8Array; pa
   for (let i = 0; i < p.w * p.h; i++) { const v = p.pixels[i]; if (v < 17) continue; const k = v - 17; const o = i * 4; if (k < n) { px[o] = p.pal[k * 4]; px[o + 1] = p.pal[k * 4 + 1]; px[o + 2] = p.pal[k * 4 + 2]; } px[o + 3] = 255; }
   g.putImageData(img, 0, 0); return c;
 }
+
+/**
+ * Palette cycling for the map, the way the original animates water and magic stones without extra tile frames:
+ * the map palette is laid out in 4-colour ramps, and the ramps used only by water-type terrain (plus the system
+ * palette's purple stone ramp, indices 104-107) have their colours rotated every tick.
+ */
+const WATER_TERRAIN = new Set([5, 6, 7, 8, 9]); const STONE_TERRAIN = new Set([12, 13, 14, 15]);
+export class MapAnim {
+  private img: ImageData; private pos = new Map<number, Uint32Array>(); private ramps: number[][] = []; private phase = 0;
+  constructor(ts: Tileset, grid: Uint16Array, private lut: Uint8Array, private world: HTMLCanvasElement) {
+    const ws = worldSize(); const idx = new Uint8Array(ws.w * ws.h).fill(16);
+    // compose the index buffer in draw order
+    for (let r = 0; r < 32; r++) for (let c = 0; c < 32; c++) {
+      const o = cellOrigin(r, c); const d = ts.defs[grid[r * 32 + c]]; const y0 = o.base - TILE_H;
+      for (let half = 0; half < 2; half++) { const list = half ? d.right : d.left;
+        for (let k = 0; k < 24; k++) { const i = list[k]; if (i === 0x7ff || i >= ts.chunks) continue; const ty = y0 + (23 - k) * CHUNK_H, tx = o.x + half * CHUNK_W;
+          for (let y = 0; y < CHUNK_H; y++) for (let x = 0; x < CHUNK_W; x++) { const v = ts.atlas[(i * CHUNK_H + y) * CHUNK_W + x]; if (v !== 16) idx[(ty + y) * ws.w + tx + x] = v; } } }
+    }
+    // which palette indices belong to water / stone tiles only
+    const use = new Map<number, [number, number]>(); // index -> [water-ish uses, other uses]
+    const seen = new Set<number>(); let hasStone = false;
+    for (const t of grid) { if (seen.has(t)) continue; seen.add(t); const d = ts.defs[t]; const water = WATER_TERRAIN.has(d.terrain); if (STONE_TERRAIN.has(d.terrain)) hasStone = true;
+      for (const list of [d.left, d.right]) for (const i of list) { if (i === 0x7ff || i >= ts.chunks) continue; for (let p = 0; p < CHUNK_W * CHUNK_H; p++) { const v = ts.atlas[i * CHUNK_H * CHUNK_W + p]; if (v === 16) continue; const u = use.get(v) ?? [0, 0]; u[water ? 0 : 1]++; use.set(v, u); } } }
+    for (let a = 20; a + 3 < 60; a += 4) { let w = 0, o = 0; for (let i = a; i < a + 4; i++) { const u = use.get(i); if (u) { w += u[0]; o += u[1]; } } if (w > 200 && o < w * 0.05) this.ramps.push([a, a + 1, a + 2, a + 3]); }
+    if (hasStone) this.ramps.push([104, 105, 106, 107]);
+    const want = new Set(this.ramps.flat()); const lists = new Map<number, number[]>();
+    for (let p = 0; p < idx.length; p++) if (want.has(idx[p])) { let l = lists.get(idx[p]); if (!l) lists.set(idx[p], (l = [])); l.push(p); }
+    for (const [v, l] of lists) this.pos.set(v, Uint32Array.from(l));
+    this.img = world.getContext('2d')!.getImageData(0, 0, ws.w, ws.h);
+  }
+  get active() { return this.pos.size > 0; }
+  /** rotate every ramp one step and repaint the affected pixels */
+  tick() {
+    if (!this.pos.size) return; this.phase++; const px = this.img.data;
+    for (const ramp of this.ramps) for (let k = 0; k < ramp.length; k++) { const v = ramp[k]; const l = this.pos.get(v); if (!l) continue; const src = ramp[(k + this.phase) % ramp.length] * 4; const r = this.lut[src], g = this.lut[src + 1], b = this.lut[src + 2];
+      for (let j = 0; j < l.length; j++) { const o = l[j] * 4; px[o] = r; px[o + 1] = g; px[o + 2] = b; } }
+    this.world.getContext('2d')!.putImageData(this.img, 0, 0);
+  }
+}

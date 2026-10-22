@@ -106,3 +106,7 @@ Sources: 나무위키 밴티지 마스터 택틱스 항목 (user-provided excerp
   (they land on walls either way round). The scenario natial roster (5 natials on Silent Hill: Fa-Rancell, Reque,
   Marme?, Hepitus, Guene-Foss) is not in the map headers or as a plain table in the EXE — probably code-driven or
   saved progress.
+- Map animation: the tile atlas has no spare frames (every chunk is referenced), so the water shimmer / stone glow in
+  the original is palette cycling. The map palette is laid out as 4-colour ramps from entry 3 (indices 20-23, 24-27 …);
+  the workbench rotates the ramps that only water-type tiles use, plus the system palette's purple stone ramp
+  (indices 104-107), every 240 ms (`MapAnim` in render.ts). Which ramps the original cycles is not stored anywhere obvious.
