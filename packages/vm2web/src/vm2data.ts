@@ -145,6 +145,23 @@ export class VM2Data {
     }
     return null;
   }
+  /**
+   * Sound cue timeline of a DATA12 animation script (u32 opcodes): 51 = load sound <id> into <slot>, 48 = wait one tick,
+   * 52 = play <slot>. Scripts 0..17 are the masters' attacks, 27+k is natial k's attack (as far as we can tell).
+   */
+  animSounds(script: number): { tick: number; sfx: number }[] {
+    const e = this.entries.DATA12?.[script]; if (!e?.length) return [];
+    const x = this.get('DATA12', script); const dv = new DataView(x.buffer, x.byteOffset, x.byteLength); const n = x.length >> 2;
+    const slots = new Map<number, number>(); const out: { tick: number; sfx: number }[] = []; let t = 0;
+    for (let j = 0; j < n;) {
+      const op = dv.getUint32(j * 4, true);
+      if (op === 51 && j + 2 < n) { const id = dv.getUint32((j + 1) * 4, true); if (id >> 16 === 13) slots.set(dv.getUint32((j + 2) * 4, true), id & 0xffff); j += 3; continue; }
+      if (op === 48) { t++; j++; continue; }
+      if (op === 52 && j + 1 < n) { const sl = slots.get(dv.getUint32((j + 1) * 4, true)); if (sl !== undefined) out.push({ tick: t, sfx: sl }); j += 2; continue; }
+      j++;
+    }
+    return out;
+  }
   /** sound effects (DATA13 RIFF/WAVE entries) */
   sfxCount() { return this.entries.DATA13 ? this.entries.DATA13.filter((e) => e.length >= 4 && e[0] === 0x52).length : 0; }
   sfx(i: number): Uint8Array | null { const e = this.entries.DATA13?.[i]; if (!e || e.length < 12 || e[0] !== 0x52) return null; const dv = new DataView(e.buffer, e.byteOffset); return e.subarray(0, Math.min(e.length, dv.getUint32(4, true) + 8)); }

@@ -131,7 +131,7 @@ export function initBattle(deps: BattleDeps) {
     const u = b.unitAt(cell.r, cell.c); let err: string | null = null;
     const n0 = b.s.log.length;
     if (summonIdx >= 0) { err = b.summon(summonIdx, cell.r, cell.c); if (!err) { summonIdx = -1; deps.sfx.role('summon'); } }
-    else if (sel && u && u.side !== 0 && !sel.acted && b.targetsFrom(sel, sel.r, sel.c).includes(u)) { err = b.attack(sel.uid, u.uid); if (!err) deps.sfx.role(b.s.log.slice(n0).some((l) => l.includes('격파')) ? 'kill' : 'attack'); if (sel.hp <= 0) sel = null; }
+    else if (sel && u && u.side !== 0 && !sel.acted && b.targetsFrom(sel, sel.r, sel.c).includes(u)) { const atk = sel; err = b.attack(sel.uid, u.uid); if (!err) { const killed = b.s.log.slice(n0).some((l) => l.includes('격파')); if (!deps.sfx.attack(atk.def.id, masterIdx[0])) deps.sfx.role('attack'); if (killed) setTimeout(() => deps.sfx.role('kill'), 600); } if (sel.hp <= 0) sel = null; }
     else if (sel && !u && !sel.moved && b.reachable(sel).has(key(cell.r, cell.c))) err = b.move(sel.uid, cell.r, cell.c);
     else if (u && u.side === 0) { sel = u; deps.sfx.role('select'); if (!u.moved && b.reachable(u).size <= 1) b.log(`! ${u.def.name}: 갈 수 있는 칸이 없음`); }
     else sel = null;

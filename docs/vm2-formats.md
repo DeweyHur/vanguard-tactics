@@ -64,3 +64,7 @@ python3 tools/vm2/vm2.py pack <게임폴더> mod/ built/      # built/DATA10.DAT
 - Sound: `DATA13` = RIFF/WAVE effects (22 kHz 16-bit mono). BGM = `MIDI/CR0xxGM.MID` (General MIDI).
 - English natial table lives at VA `0x474A30` (same 0x58-byte layout); `vm2web` now finds the table by scanning for 24
   records whose +0x50/+0x54 point at short strings, so either build works.
+- `DATA12` = animation scripts (u32 opcodes). Seen so far: `51 <res id> <slot>` preloads a resource (sounds are `13:<n>`),
+  `48` waits one tick, `52 <slot>` plays the slot, `34/31/22/20` move/frame ops with signed args. Scripts 0..17 are the
+  masters' attacks (sounds 82..109), 27+k is natial k's attack (sounds 0..75), 65..70 big effects (76..81).
+  System SE table in vmv2.exe at `0x47446c` maps 14 UI sounds to DATA13 137..153 (SE1 = 138 is the common click).

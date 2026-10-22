@@ -29,7 +29,7 @@
       <div class="card">
         <h2>게임 파일 불러오기</h2>
         <p>밴티지 마스터 V2 게임 폴더의 <code>DATA00.DAT … DATA13.DAT</code>와 <code>Vmtv2.exe</code>(영문판은 <code>vmv2.exe</code>), 음악 <code>MIDI/*.MID</code>를 아래에 끌어다 놓거나 선택하세요.<br/>
-        파일은 <b>이 브라우저 안(IndexedDB)에만</b> 저장되고 어디로도 전송되지 않습니다. 최소 <code>DATA10.DAT</code>(맵·텍스트), 스탯·배틀에는 <code>Vmtv2.exe</code>, 초상화는 <code>DATA09.DAT</code>, 유닛 스프라이트는 <code>DATA00+DATA02</code>, 효과음은 <code>DATA13.DAT</code>, BGM은 <code>MIDI/*.MID</code>가 필요합니다.</p>
+        파일은 <b>이 브라우저 안(IndexedDB)에만</b> 저장되고 어디로도 전송되지 않습니다. 최소 <code>DATA10.DAT</code>(맵·텍스트), 스탯·배틀에는 <code>Vmtv2.exe</code>, 초상화는 <code>DATA09.DAT</code>, 유닛 스프라이트는 <code>DATA00+DATA02</code>, 효과음은 <code>DATA13.DAT</code>(+유닛별 공격음은 <code>DATA12.DAT</code>), BGM은 <code>MIDI/*.MID</code>가 필요합니다.</p>
         <div id="drop">여기에 파일 놓기 / 클릭해서 선택<input id="fileInput" type="file" multiple hidden /></div>
         <div id="fileList"></div>
         <div class="row"><button id="btnClear">저장된 파일 전부 지우기</button><button id="btnResetMods">수정 내용 전부 되돌리기</button></div>
@@ -74,7 +74,9 @@
     <section id="tab-sound" class="tab hidden"><div class="card wide"><h2>사운드 <span class="muted small">(BGM: MIDI 파일 · 효과음: DATA13 — #137~153이 게임 UI 효과음, #0~136이 유닛 공격음. 배틀에서 쓸 소리를 골라두세요)</span></h2>
       <div class="row"><label><input type="checkbox" id="sfxOn" checked /> 효과음 켜기</label><label>볼륨 <input type="range" id="sfxVol" min="0" max="1" step="0.05" value="0.6" /></label></div>
       <div id="bgmRow" class="row"></div>
-      <div id="sfxRoles" class="row"></div><div id="sfxList"></div></div></section>
+      <div id="sfxRoles" class="row"></div>
+      <h2 style="margin-top:12px">유닛별 공격음 <span class="muted small">(DATA12 애니메이션 스크립트에서 추출 — 배틀에서 공격할 때 원래 타이밍대로 재생)</span></h2><div id="sfxUnits"></div>
+      <h2 style="margin-top:12px">효과음 목록</h2><div id="sfxList"></div></div></section>
     <section id="tab-sprites" class="tab hidden"><div class="card wide">
       <h2>네이티얼 ↔ 스프라이트 매핑 <span class="muted small">(DATA02 — 초상화와 안 맞으면 엔트리 번호를 바꾸세요)</span></h2>
       <div id="spriteMap"></div>

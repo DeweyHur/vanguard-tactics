@@ -262,6 +262,9 @@ function buildSound() {
     $('bgmStop').onclick = () => midi.stop();
     $<HTMLInputElement>('bgmVol').oninput = (e) => midi.setVolume(+(e.target as HTMLInputElement).value);
   }
+  const unitEl = $('sfxUnits'); const nats0 = loaded && data.has('DATA12') ? data.natials() : [];
+  unitEl.innerHTML = nats0.length ? `<table><tr><th>#</th><th>네이티얼</th><th>스크립트</th><th>사운드 큐 (틱:번호)</th><th></th></tr>${nats0.map((nt, k) => { const cues = data.animSounds(27 + k); return `<tr><td>${k}</td><td class="l">${nt.name}</td><td>DATA12 #${27 + k}</td><td class="l">${cues.map((c) => `${c.tick}:#${c.sfx}`).join(' · ') || '—'}</td><td class="l"><button data-k="${k}">▶ 공격음</button></td></tr>`; }).join('')}</table>` : '<p class="muted">DATA12.DAT(애니메이션 스크립트)를 넣으면 유닛별 공격음이 나옵니다.</p>';
+  unitEl.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.onclick = () => sfx.sequence(data.animSounds(27 + +b.dataset.k!)));
   const list = $('sfxList'), roles = $('sfxRoles'); const n = loaded ? data.sfxCount() : 0;
   if (!n) { list.innerHTML = '<p class="muted">DATA13.DAT를 넣으면 효과음 목록이 나옵니다.</p>'; roles.innerHTML = ''; return; }
   const cur = sfxRoles();

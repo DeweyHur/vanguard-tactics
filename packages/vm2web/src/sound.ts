@@ -19,5 +19,9 @@ export class Sfx {
     const a = new Audio(u); a.volume = this.volume; a.play().catch(() => { /* autoplay blocked until first gesture */ });
   }
   role(r: SfxRole) { const i = this.roles()[r]; if (i >= 0) this.play(i); }
+  /** play a DATA12 script's sound cues on their original timeline (one tick ~ 1/15 s) */
+  sequence(cues: { tick: number; sfx: number }[], tickMs = 66) { for (const c of cues) setTimeout(() => this.play(c.sfx), c.tick * tickMs); return cues.length > 0; }
+  /** attack sounds of a unit: natial k -> script 27+k, master m -> script m */
+  attack(defId: string, masterIdx: number): boolean { const d = this.data(); if (!d) return false; const sc = defId === 'master' ? masterIdx : defId.startsWith('n') ? 27 + +defId.slice(1) : -1; return sc >= 0 && this.sequence(d.animSounds(sc)); }
   reset() { for (const u of this.urls.values()) URL.revokeObjectURL(u); this.urls.clear(); }
 }
