@@ -1,6 +1,6 @@
 import { type VM2Data, type MapInfo, type Natial, type Tileset, TERRAIN, ELEMENT } from './vm2data';
 import { TileRenderer, drawMap, worldSize, pickCell, cellOrigin, hexPath } from './render';
-import { Battle, type UnitDef, type Unit, type Terrain } from './battle/engine';
+import { Battle, reachableFrom, masterDef, type UnitDef, type Unit, type Terrain } from './battle/engine';
 import { botTurn } from './battle/bot';
 import { key, neighbors, type Cell } from './battle/hex';
 import { RULES } from './battle/rules';
@@ -25,12 +25,14 @@ export function initBattle(deps: BattleDeps) {
     $<HTMLSelectElement>('bM0').innerHTML = opts; $<HTMLSelectElement>('bM1').innerHTML = opts; $<HTMLSelectElement>('bM1').selectedIndex = Math.min(1, d.masters.length - 1);
   }
 
+  /** nearest cell to `near` from which a walking master can actually reach plenty of cells */
   function findStart(terrain: Terrain, near: Cell): Cell {
-    let best: Cell = near, bd = 1e9;
+    const md = masterDef('m'); let best: Cell = near, bd = 1e9;
     for (let r = 0; r < 32; r++) for (let c = 0; c < 32; c++) {
+      const dd = Math.hypot(r - near.r, c - near.c); if (dd >= bd) continue;
       if ((RULES.moveCost[terrain.terrain(r, c)]?.[0] ?? Infinity) === Infinity) continue;
-      const ok = neighbors(r, c).filter((n) => (RULES.moveCost[terrain.terrain(n.r, n.c)]?.[0] ?? Infinity) !== Infinity).length >= 3; if (!ok) continue;
-      const dd = Math.hypot(r - near.r, c - near.c); if (dd < bd) { bd = dd; best = { r, c }; }
+      if (reachableFrom(terrain, md, r, c, () => null).size < 12) continue;
+      bd = dd; best = { r, c };
     }
     return best;
   }
@@ -42,7 +44,7 @@ export function initBattle(deps: BattleDeps) {
     const T = ts, G = grid; const terrain: Terrain = { terrain: (r, c) => T.defs[G[r * 32 + c]].terrain, height: (r, c) => T.defs[G[r * 32 + c]].height };
     const n0 = $<HTMLSelectElement>('bM0'), n1 = $<HTMLSelectElement>('bM1');
     b = new Battle(terrain, nats.map(toUnitDef), [findStart(terrain, { r: 5, c: 5 }), findStart(terrain, { r: 26, c: 26 })], [n0.selectedOptions[0].text, n1.selectedOptions[0].text]);
-    sel = null; summonIdx = -1; $('bsetup').classList.add('hidden');
+    (window as unknown as { __battle: Battle; __cam: typeof cam }).__battle = b; (window as unknown as { __cam: typeof cam }).__cam = cam; sel = null; summonIdx = -1; $('bsetup').classList.add('hidden');
     wg.clearRect(0, 0, ws.w, ws.h); drawMap(wg, rend, grid); fit(); refresh();
   };
   $('bQuit').onclick = () => { b = null; $('bsetup').classList.remove('hidden'); refresh(); draw(); };
@@ -74,7 +76,7 @@ export function initBattle(deps: BattleDeps) {
       g.fillStyle = '#fff'; g.font = 'bold 11px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText(u.def.master ? 'M' : (ELEMENT[u.def.element]?.[0] ?? '?') + (u.level > 1 ? u.level : ''), p.x, p.y);
       g.fillStyle = '#000'; g.fillRect(p.x - 12, p.y + 13, 24, 4); g.fillStyle = u.hp / u.def.hp > 0.5 ? '#4e4' : u.hp / u.def.hp > 0.25 ? '#ee4' : '#e44'; g.fillRect(p.x - 12, p.y + 13, 24 * u.hp / u.def.hp, 4);
-      if (!u.moved && !u.acted && u.side === b.s.side && b.s.side === 0) { g.fillStyle = '#fff'; g.beginPath(); g.arc(p.x + 9, p.y - 9, 3, 0, Math.PI * 2); g.fill(); }
+      if ((!u.moved || !u.acted) && u.side === b.s.side && b.s.side === 0) { g.fillStyle = '#fff'; g.beginPath(); g.arc(p.x + 9, p.y - 9, 3, 0, Math.PI * 2); g.fill(); }
     }
     if (hover) { const p = center(hover.r, hover.c); hexPath(g, p.x, p.y); g.lineWidth = 1; g.strokeStyle = '#ff0'; g.stroke(); const d = ts.defs[grid[hover.r * 32 + hover.c]]; const u = b.unitAt(hover.r, hover.c); $('bhud').textContent = `(${hover.r},${hover.c}) ${TERRAIN[d.terrain] ?? d.terrain} 높이 ${d.height}${u ? ` · ${u.def.name} HP ${u.hp}/${u.def.hp}` : ''}`; }
     g.restore();
@@ -93,32 +95,40 @@ export function initBattle(deps: BattleDeps) {
     $('bLog').textContent = s.log.slice(-14).join('\n'); $('bLog').scrollTop = 1e6;
   }
 
-  // --- input ---
+  // --- input (mouse + trackpad) ---
   const toWorld = (e: MouseEvent) => { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left + cam.x) / cam.z, y: (e.clientY - r.top + cam.y) / cam.z }; };
-  let drag: { x: number; y: number; cx: number; cy: number } | null = null;
+  let drag: { x: number; y: number; cx: number; cy: number; moved: boolean } | null = null;
   canvas.oncontextmenu = (e) => e.preventDefault();
-  canvas.onmousedown = (e) => {
-    if (e.button === 1) { drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y }; return; }
-    if (!b || !ts || !grid || busy) return;
+  canvas.onpointerdown = (e) => {
     if (e.button === 2) { sel = null; summonIdx = -1; refresh(); draw(); return; }
+    drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false }; canvas.setPointerCapture(e.pointerId);
+  };
+  canvas.onpointermove = (e) => {
+    if (drag) { if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true; if (drag.moved) { cam.x = drag.cx - (e.clientX - drag.x); cam.y = drag.cy - (e.clientY - drag.y); draw(); return; } }
+    if (!ts || !grid) return; const p = toWorld(e); hover = pickCell(ts, grid, p.x, p.y); draw();
+  };
+  canvas.onpointerup = (e) => {
+    const d = drag; drag = null; if (!d || d.moved || e.button !== 0) return;
+    if (!b || !ts || !grid || busy) return;
     const p = toWorld(e); const cell = pickCell(ts, grid, p.x, p.y); if (!cell) return;
     const s = b.s; if (s.side !== 0 || s.winner >= 0) return;
     const u = b.unitAt(cell.r, cell.c); let err: string | null = null;
     if (summonIdx >= 0) { err = b.summon(summonIdx, cell.r, cell.c); if (!err) summonIdx = -1; }
     else if (sel && u && u.side !== 0 && !sel.acted && b.targetsFrom(sel, sel.r, sel.c).includes(u)) { err = b.attack(sel.uid, u.uid); if (sel.hp <= 0) sel = null; }
     else if (sel && !u && !sel.moved && b.reachable(sel).has(key(cell.r, cell.c))) err = b.move(sel.uid, cell.r, cell.c);
-    else if (u && u.side === 0) sel = u;
+    else if (u && u.side === 0) { sel = u; if (!u.moved && b.reachable(u).size <= 1) b.log(`! ${u.def.name}: 갈 수 있는 칸이 없음`); }
     else sel = null;
     if (err) b.log(`! ${err}`);
     refresh(); draw();
   };
-  canvas.onmousemove = (e) => {
-    if (drag) { cam.x = drag.cx - (e.clientX - drag.x); cam.y = drag.cy - (e.clientY - drag.y); draw(); return; }
-    if (!ts || !grid) return; const p = toWorld(e); hover = pickCell(ts, grid, p.x, p.y); draw();
+  canvas.onwheel = (e) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) { const r = canvas.getBoundingClientRect(); const mx = e.clientX - r.left, my = e.clientY - r.top; const wx = (mx + cam.x) / cam.z, wy = (my + cam.y) / cam.z; cam.z = Math.min(4, Math.max(0.5, cam.z * Math.exp(-e.deltaY * 0.01))); cam.x = wx * cam.z - mx; cam.y = wy * cam.z - my; }
+    else { cam.x += e.deltaX; cam.y += e.deltaY; }
+    draw();
   };
-  window.addEventListener('mouseup', () => { drag = null; });
-  canvas.onwheel = (e) => { e.preventDefault(); const r = canvas.getBoundingClientRect(); const mx = e.clientX - r.left, my = e.clientY - r.top; const wx = (mx + cam.x) / cam.z, wy = (my + cam.y) / cam.z; cam.z = Math.min(4, Math.max(0.5, cam.z * (e.deltaY < 0 ? 1.25 : 0.8))); cam.x = wx * cam.z - mx; cam.y = wy * cam.z - my; draw(); };
   window.addEventListener('resize', () => { if (!$('tab-battle').classList.contains('hidden')) fit(); });
+  $('bFit').onclick = fit;
 
   return { populate, onShow: () => { populate(); fit(); } };
 }

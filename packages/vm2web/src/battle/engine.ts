@@ -33,27 +33,8 @@ export class Battle {
   passCost(def: UnitDef, r: number, c: number) { return RULES.moveCost[this.map.terrain(r, c)]?.[def.moveType] ?? Infinity; }
 
   /** reachable cells with remaining move points (Dijkstra); ZOC stops movement next to enemies (flyers ignore) */
-  reachable(u: Unit): Map<number, { r: number; c: number; left: number; from: number }> {
-    const best = new Map<number, { r: number; c: number; left: number; from: number }>();
-    const start = key(u.r, u.c); best.set(start, { r: u.r, c: u.c, left: u.def.move, from: -1 });
-    const open = [start]; const zoc = u.def.moveType !== RULES.zocIgnoreMoveType;
-    const enemyAdjacent = (r: number, c: number) => neighbors(r, c).some((n) => { const o = this.unitAt(n.r, n.c); return o && o.side !== u.side; });
-    while (open.length) {
-      open.sort((a, b) => best.get(b)!.left - best.get(a)!.left); const k = open.shift()!; const cur = best.get(k)!;
-      if (cur.left <= 0) continue;
-      if (zoc && k !== start && enemyAdjacent(cur.r, cur.c)) continue;
-      for (const n of neighbors(cur.r, cur.c)) {
-        const occ = this.unitAt(n.r, n.c); if (occ && occ.side !== u.side) continue;
-        let cost = this.passCost(u.def, n.r, n.c); if (cost === Infinity) continue;
-        const dh = this.map.height(n.r, n.c) - this.map.height(cur.r, cur.c);
-        if (u.def.moveType !== 4) { if (dh > RULES.maxClimb) continue; if (dh > 0) cost += dh - 1; }
-        const left = cur.left - cost; if (left < 0) continue;
-        const nk = key(n.r, n.c); const prev = best.get(nk);
-        if (!prev || prev.left < left) { best.set(nk, { r: n.r, c: n.c, left, from: k }); open.push(nk); }
-      }
-    }
-    for (const [k, v] of best) if (k !== start && this.unitAt(v.r, v.c)) best.delete(k); // can't stop on a friend
-    return best;
+  reachable(u: Unit) {
+    return reachableFrom(this.map, u.def, u.r, u.c, (r, c) => { const o = this.unitAt(r, c); return o ? (o.side === u.side ? 'friend' : 'enemy') : null; });
   }
   targetsFrom(u: Unit, r: number, c: number): Unit[] {
     return this.s.units.filter((o) => o.hp > 0 && o.side !== u.side && dist({ r, c }, o) <= u.def.range);
@@ -107,4 +88,29 @@ export class Battle {
     killer.kills++; const nl = RULES.levelKills.filter((k) => killer.kills >= k).length;
     if (nl > killer.level && !killer.def.master) { killer.level = Math.min(3, nl); killer.hp = Math.min(killer.def.hp, killer.hp + 10); this.log(`  ${killer.def.name} 레벨 ${killer.level}!`); }
   }
+}
+
+/** movement search independent of battle state; `occupant` tells who stands on a cell */
+export function reachableFrom(map: Terrain, def: UnitDef, r0: number, c0: number, occupant: (r: number, c: number) => 'friend' | 'enemy' | null) {
+  const best = new Map<number, { r: number; c: number; left: number; from: number }>();
+  const start = key(r0, c0); best.set(start, { r: r0, c: c0, left: def.move, from: -1 });
+  const open = [start]; const zoc = def.moveType !== RULES.zocIgnoreMoveType;
+  const enemyAdjacent = (r: number, c: number) => neighbors(r, c).some((n) => occupant(n.r, n.c) === 'enemy');
+  const cost = (r: number, c: number) => RULES.moveCost[map.terrain(r, c)]?.[def.moveType] ?? Infinity;
+  while (open.length) {
+    open.sort((a, b) => best.get(b)!.left - best.get(a)!.left); const k = open.shift()!; const cur = best.get(k)!;
+    if (cur.left <= 0) continue;
+    if (zoc && k !== start && enemyAdjacent(cur.r, cur.c)) continue;
+    for (const n of neighbors(cur.r, cur.c)) {
+      if (occupant(n.r, n.c) === 'enemy') continue;
+      let cst = cost(n.r, n.c); if (cst === Infinity) continue;
+      const dh = map.height(n.r, n.c) - map.height(cur.r, cur.c);
+      if (def.moveType !== 4) { if (dh > RULES.maxClimb) continue; if (dh > 0) cst += dh - 1; }
+      const left = cur.left - cst; if (left < 0) continue;
+      const nk = key(n.r, n.c); const prev = best.get(nk);
+      if (!prev || prev.left < left) { best.set(nk, { r: n.r, c: n.c, left, from: k }); open.push(nk); }
+    }
+  }
+  for (const [k, v] of best) if (k !== start && occupant(v.r, v.c)) best.delete(k); // can't stop on a friend
+  return best;
 }

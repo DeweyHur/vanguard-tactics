@@ -13,7 +13,7 @@ export const RULES = {
     12: [1, 1, 2, 2, 1], 13: [2, 2, 1, 1, 1], 14: [1, 1, 2, 2, 1], 15: [1, 1, 2, 2, 1], 16: [Infinity, Infinity, Infinity, Infinity, Infinity],
   } as Record<number, number[]>,
   /** climbing more than this many height steps in one hop is blocked for non-flyers */
-  maxClimb: 2,
+  maxClimb: 3,
   /** element cycle: 땅(1) > 물(2) > 불(3) > 하늘(4) > 땅 */
   elemAdv: 1.5, elemDis: 0.67,
   /** magic stone terrain -> element it empowers (12 땅, 13 물, 14 불, 15 하늘) */

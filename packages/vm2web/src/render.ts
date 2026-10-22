@@ -54,7 +54,7 @@ export function pickCell(ts: Tileset, grid: Uint16Array, wx: number, wy: number)
   let best: { r: number; c: number } | null = null, bd = 1e9;
   for (let r = 0; r < 32; r++) for (let c = 0; c < 32; c++) {
     const o = cellOrigin(r, c); const h = ts.defs[grid[r * 32 + c]].height; const cx = o.x + 24, cy = o.base - 18 - 12 * h;
-    const d = Math.hypot((wx - cx) / 24, (wy - cy) / 18); if (d < bd) { bd = d; best = { r, c }; }
+    const d = Math.hypot((wx - cx) / 24, (wy - cy) / 18); if (d <= bd) { bd = d; best = { r, c }; } // ties: front (later) row wins, matching draw order
   }
   return bd < 1.1 ? best : null;
 }
