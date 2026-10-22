@@ -19,13 +19,13 @@ export function initBattle(deps: BattleDeps) {
   /** (re)draw the world map with the palette tinted for the current light period */
   function renderWorld() {
     const d = deps.data(); if (!d || !b || !ts || !grid) return; const L = lightAt(b.s.clock); if (L === lastLight) return; lastLight = L;
-    const t = RULES.lightTint[L] ?? [1, 1, 1]; const lut = d.palette(ts.pal).slice(); for (let i = 0; i < 256; i++) { lut[i * 4] = Math.round(lut[i * 4] * t[0]); lut[i * 4 + 1] = Math.round(lut[i * 4 + 1] * t[1]); lut[i * 4 + 2] = Math.round(lut[i * 4 + 2] * t[2]); }
+    const t = RULES.lightTint[L] ?? [1, 1, 1]; const lut = d.palette(ts.pal).slice(); for (let i = 17; i < 60; i++) { lut[i * 4] = Math.round(lut[i * 4] * t[0]); lut[i * 4 + 1] = Math.round(lut[i * 4 + 1] * t[1]); lut[i * 4 + 2] = Math.round(lut[i * 4 + 2] * t[2]); }
     rend = new TileRenderer(ts, lut); wg.clearRect(0, 0, ws.w, ws.h); drawMap(wg, rend, grid); mapAnim = new MapAnim(ts, grid, lut, world);
   }
   let summonIdx = -1, magicMode = false, hover: Cell | null = null, busy = false; let masterIdx: [number, number] = [0, 1];
   const attackAnim = new Map<number, { t0: number; dx: number; dy: number }>();
   const pops: { uid: number; text: string; t0: number }[] = [];
-  const STEP_MS = 170, SUMMON_MS = 1000, SUMMON_FX = 162, ACTION_PAUSE_MS = 2700;
+  const STEP_MS = 170, SUMMON_MS = 1000, SUMMON_FX = 162, ACTION_PAUSE_MS = 1500;
   const walkAnim = new Map<number, { path: Cell[]; t0: number }>();
   const summonAnim = new Map<number, { t0: number }>();
   const STONE_MS = 1100; const stoneAnim = new Map<number, { t0: number; side: 0 | 1 }>();
@@ -45,7 +45,9 @@ export function initBattle(deps: BattleDeps) {
     for (const u of b!.s.units) if (!u.def.master && !summonAnim.has(u.uid) && u.uid >= n0) { summonAnim.set(u.uid, { t0: now() + delay }); kickAnim(); }
   }
   const active = () => b?.activeUnit() ?? null;
-  const mine = () => { const u = active(); return u && u.side === 0 && b!.s.winner < 0 ? u : null; };
+  /** unit shown as "current" in the panel and on the map: during the pause after an action it stays on the unit that just acted */
+  let shownUid = -1; const shown = () => (shownUid >= 0 ? b?.unit(shownUid) ?? null : active());
+  const mine = () => { const u = active(); return u && u.side === 0 && b!.s.winner < 0 && shownUid < 0 ? u : null; };
 
   function noteDeaths(before: Unit[], delay = 0) { for (const u of before) if (u.hp <= 0 && !deaths.has(u.uid)) { deaths.set(u.uid, { t0: now() + delay, r: u.r, c: u.c, side: u.side, id: u.def.id, facing: u.facing }); kickAnim(); } }
   function popDamage(n0: number, delay = 0) {
@@ -98,7 +100,7 @@ export function initBattle(deps: BattleDeps) {
     lastLight = -1; renderWorld(); fit(); refresh(); deps.bgm(); runBots();
   };
   $('bQuit').onclick = () => { b = null; deps.bgmStop(); $('bsetup').classList.remove('hidden'); refresh(); draw(); };
-  $('bEnd').onclick = () => { const u = mine(); if (!u || busy) return; const err = b!.wait(u.uid); if (err) b!.log(`! ${err}`); else deps.sfx.role('turn'); afterAction(); };
+  $('bEnd').onclick = () => { const u = mine(); if (!u || busy) return; const err = b!.wait(u.uid); if (err) b!.log(`! ${err}`); else deps.sfx.role('turn'); afterAction(u.uid); };
   $('bMagic').onclick = () => { const u = mine(); if (!u || !u.def.spell) return; magicMode = !magicMode; summonIdx = -1; refresh(); draw(); };
 
   /** let the bot play every unit of side 1 until one of ours is active (with small delays so it can be followed) */
@@ -108,17 +110,22 @@ export function initBattle(deps: BattleDeps) {
       // the camera travels to the unit first; it acts only once it is on screen
       refresh(); draw(); await panTo(active()!); await new Promise((r) => setTimeout(r, 250));
       if (!b || !active() || active()!.side !== 1) break; const u = active()!; const n0 = b.s.log.length; const uid0 = b.s.nextUid; const before = { r: u.r, c: u.c }; const aliveBefore = b.alive(); const stonesBefore = stonesSnap();
-      botAct(b); const walkMs = startWalk(u); noteDeaths(aliveBefore, walkMs); noteStones(stonesBefore, walkMs);
+      shownUid = u.uid; botAct(b); const walkMs = startWalk(u); noteDeaths(aliveBefore, walkMs); noteStones(stonesBefore, walkMs);
       const added = b.s.log.slice(n0); const hitLine = added.find((l) => l.includes('피해'));
       if (hitLine) { const tn = /→ (.+?) \d+ 피해/.exec(hitLine)?.[1]; const t = b.s.units.find((x) => x.def.name === tn); if (t) { const ax = u.c + (u.r & 1) * 0.5, tx = t.c + (t.r & 1) * 0.5; attackAnim.set(u.uid, { t0: now() + walkMs, dx: Math.sign(tx - ax), dy: Math.sign(t.r - u.r) }); kickAnim(); } setTimeout(() => { if (!deps.sfx.attack(u.def.id, masterIdx[1])) deps.sfx.role('attack'); }, walkMs); popDamage(n0, walkMs); if (added.some((l) => l.includes('격파'))) setTimeout(() => deps.sfx.role('kill'), walkMs + 600); }
       else if (added.some((l) => l.includes('소환'))) { deps.sfx.role('summon'); startSummon(uid0); }
       refresh(); draw();
       if (walkMs) { await new Promise((r) => setTimeout(r, walkMs)); await panTo(u); }
       await new Promise((r) => setTimeout(r, ACTION_PAUSE_MS)); // let the action be seen before the next unit moves
+      shownUid = -1;
     }
     busy = false; const u = active(); if (u && u.side === 0) { void panTo(u); deps.sfx.role('select'); } refresh(); draw();
   }
-  function afterAction() { summonIdx = -1; magicMode = false; refresh(); draw(); void runBots(); }
+  function afterAction(prevUid = -1) {
+    summonIdx = -1; magicMode = false;
+    if (prevUid >= 0 && active()?.uid !== prevUid) { shownUid = prevUid; refresh(); draw(); setTimeout(() => { shownUid = -1; refresh(); draw(); void runBots(); }, ACTION_PAUSE_MS); return; }
+    refresh(); draw(); void runBots();
+  }
   /** smooth camera: glide to centre a unit; resolves when it arrives (immediately if already centred) */
   let camAnim: { x0: number; y0: number; x1: number; y1: number; t0: number; dur: number; done: () => void } | null = null;
   function panTo(u: Unit): Promise<void> {
@@ -159,7 +166,7 @@ export function initBattle(deps: BattleDeps) {
     for (const v of lit) fillHex(v.r, v.c, 'rgba(80,160,255,.35)');
     for (const t of tg) fillHex(t.r, t.c, magicMode ? 'rgba(120,255,160,.45)' : 'rgba(255,60,60,.45)');
     for (const p of sc) fillHex(p.r, p.c, 'rgba(80,255,120,.4)');
-    const act = active();
+    const act = shown();
     // the acting unit's tile: pulsing fill and outline in its side's colour
     if (act && b.s.winner < 0 && !walkAnim.has(act.uid)) { const p = center(act.r, act.c); const pulse = 0.5 + 0.5 * Math.sin(now() / 220); const mine0 = act.side === 0;
       hexPath(g, p.x, p.y); g.fillStyle = mine0 ? `rgba(255,220,80,${0.25 + 0.25 * pulse})` : `rgba(255,90,90,${0.25 + 0.25 * pulse})`; g.fill();
@@ -280,7 +287,7 @@ export function initBattle(deps: BattleDeps) {
     const info = $('bInfo'), ui = $('bUnit');
     if (!b) { info.textContent = ''; ui.textContent = ''; $('bSummon').innerHTML = ''; $('bLog').textContent = ''; $('bOrder').innerHTML = ''; closeSummon(); return; }
     const s = b.s; const st = (side: 0 | 1) => Object.values(s.stones).filter((o) => o === side).length; const L = lightAt(s.clock);
-    const act = active();
+    const act = shown();
     info.innerHTML = `${s.winner >= 0 ? `<b style="color:var(--acc)">${s.names[s.winner as 0 | 1]} 승리!</b><br>` : ''}🕒 <b>${clockText(s.clock)}</b> ${L === 0 ? '☀ 낮' : L === 2 ? '🌙 밤' : '🌤 어스름'}${act ? ` · <b>${act.def.name}</b>${act.side === 0 ? ' 차례' : ' (봇)'}` : ''}<br><span class="e2">${s.names[0]}</span> MP ${s.mp[0]}/${s.mpMax[0]} ${netHtml(hourly(0).net)} · 석 ${st(0)}<br><span class="e3">${s.names[1]}</span> MP ${s.mp[1]}/${s.mpMax[1]} ${netHtml(hourly(1).net)} · 석 ${st(1)}`;
     $('bOrder').innerHTML = b.order(8).map(({ u, at }) => `<span class="ord ${u.side === 0 ? 'e2' : 'e3'}${u === act ? ' now' : ''}" title="${u.def.name}">${u.def.name.slice(0, 4)}<small>${clockText(at)}</small></span>`).join('');
     ui.innerHTML = act ? unitHtml(act) : '<span class="muted">…</span>'; mountAll(ui);
@@ -326,7 +333,7 @@ export function initBattle(deps: BattleDeps) {
     else if (!u && b.reachable(me).has(key(cell.r, cell.c))) { err = b.move(me.uid, cell.r, cell.c); if (!err) noteStones(stonesBefore, startWalk(me)); }
     else if (u && u.side !== 0 && dist(me, u) > 1) err = magicMode ? '마법 사정거리 밖' : '사정거리 밖';
     if (err) b.log(`! ${err}`); noteDeaths(aliveBefore); if (acted) noteStones(stonesBefore);
-    if (acted) afterAction(); else { refresh(); draw(); }
+    if (acted) afterAction(me.uid); else { refresh(); draw(); }
   };
   canvas.onwheel = (e) => {
     e.preventDefault();
