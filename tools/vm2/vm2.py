@@ -7,7 +7,10 @@
   python3 vm2.py map-export <gamedir> <map#> <out.json>   header + 32x32 tile grid + tile properties
   python3 vm2.py map-import <in.json> <moddir>            write edited tile grid / texts back as mod entries
   python3 vm2.py map-render <gamedir> <map#> <out.png>    schematic hex render (terrain colour + height)
-  python3 vm2.py natials <gamedir>                     dump natial (unit) name/description entries
+  python3 vm2.py masters <gamedir>                     dump the 38 enemy masters (name/class/description)
+  python3 vm2.py natials <Vmtv2.exe>                   24 natial stat records from the EXE (.data 0x46DE80)
+  python3 vm2.py natials-export <Vmtv2.exe> <out.json>
+  python3 vm2.py natials-import <in.json> <Vmtv2.exe> <out.exe>   patch stats into a copy of the EXE
   python3 vm2.py text-export <gamedir> <out.json>      all map + natial texts
   python3 vm2.py text-import <in.json> <moddir>        texts back (same byte budget as original)
 
@@ -175,12 +178,77 @@ def cmd_map_render(gamedir, n, out):
     img.save(out); print('wrote', out)
 
 
-# ---------------- natials / text ----------------
+# ---------------- natial stats (EXE) ----------------
+NAT_VA, NAT_COUNT, NAT_SIZE, IMG_BASE = 0x46DE80, 24, 0x58, 0x400000
+STAT_NAMES = ['s1_atk', 's2_def', 's3_mag', 's4_mdef', 's5_spd']  # order guessed; values per level 1..3
+ELEMENT = {1: '땅', 2: '물', 3: '불', 4: '하늘'}
+MOVETYPE = {0: '걷기', 1: '걷기2', 2: '헤엄', 3: '헤엄2', 4: '날기'}
+
+
+def exe_sections(exe):
+    # [(va, size, raw_off)] from the PE section table
+    b = open(exe, 'rb').read()
+    pe = struct.unpack_from('<I', b, 0x3c)[0]
+    nsec = struct.unpack_from('<H', b, pe + 6)[0]; opt = struct.unpack_from('<H', b, pe + 20)[0]
+    secs = []
+    for i in range(nsec):
+        o = pe + 24 + opt + i * 40
+        vs, va, rs, ro = struct.unpack_from('<IIII', b, o + 8)
+        secs.append((va, max(vs, rs), ro))
+    return b, secs
+
+
+def va_to_off(secs, va):
+    rva = va - IMG_BASE
+    for sva, size, ro in secs:
+        if sva <= rva < sva + size: return rva - sva + ro
+    raise SystemExit(f'va {va:#x} not in any section')
+
+
+def exe_cstr(b, secs, va):
+    o = va_to_off(secs, va); e = b.find(b'\0', o); return b[o:e].decode('cp949', 'replace')
+
+
+def read_natials(exe):
+    b, secs = exe_sections(exe); base = va_to_off(secs, NAT_VA); out = []
+    for i in range(NAT_COUNT):
+        r = b[base + i * NAT_SIZE: base + (i + 1) * NAT_SIZE]; v = struct.unpack('<22I', r)
+        flags = r[0x44:0x48]
+        out.append({'index': i, 'name': exe_cstr(b, secs, v[20]), 'attack': exe_cstr(b, secs, v[21]), 'hp': v[0],
+                    **{STAT_NAMES[k]: list(v[1 + 3 * k:4 + 3 * k]) for k in range(5)},
+                    'move': v[16], 'element': flags[0], 'element_name': ELEMENT.get(flags[0], '?'), 'flag1': flags[1], 'range': flags[2], 'spell': flags[3],
+                    'move_type': v[18], 'move_type_name': MOVETYPE.get(v[18], '?'), 'cost': v[19]})
+    return out
+
+
+def cmd_natials(exe):
+    for n in read_natials(exe):
+        st = ' '.join(f'{"/".join(map(str, n[k])):>8s}' for k in STAT_NAMES)
+        print(f'{n["index"]:2d} {n["name"]:<8s} {n["element_name"]:2s} HP{n["hp"]:3d} {st} 이동{n["move"]} {n["move_type_name"]:<4s} 사정{n["range"]} 마법{n["spell"]:#04x} MP{n["cost"]:5d}  ({n["attack"]})')
+
+
+def cmd_natials_export(exe, out):
+    json.dump(read_natials(exe), open(out, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); print('wrote', out)
+
+
+def cmd_natials_import(injson, exe, outexe):
+    doc = json.load(open(injson, encoding='utf-8')); b, secs = exe_sections(exe); b = bytearray(b); base = va_to_off(secs, NAT_VA)
+    for n in doc:
+        i = n['index']; o = base + i * NAT_SIZE
+        struct.pack_into('<I', b, o, n['hp'])
+        for k, key in enumerate(STAT_NAMES): struct.pack_into('<3I', b, o + 4 + 12 * k, *n[key])
+        struct.pack_into('<I', b, o + 0x40, n['move'])
+        b[o + 0x44:o + 0x48] = bytes([n['element'], n['flag1'], n['range'], n['spell']])
+        struct.pack_into('<II', b, o + 0x48, n['move_type'], n['cost'])
+    open(outexe, 'wb').write(b); print('wrote', outexe, '(names are a string pool: not patched)')
+
+
+# ---------------- masters / text ----------------
 def natial_entry(d):
     return {'name': cstr(d, 0, 20), 'element': d[20], 'desc': cstr(d, 28), 'tail': list(struct.unpack_from('<3I', d, len(d) - 12))}
 
 
-def cmd_natials(gamedir):
+def cmd_masters(gamedir):
     ents = load(gamedir, 'DATA10')
     for i in range(NATIAL_FIRST, NATIAL_FIRST + NATIAL_COUNT):
         e = natial_entry(dec(ents[i]))
@@ -225,7 +293,10 @@ if __name__ == '__main__':
         elif c == 'map-export': cmd_map_export(a[1], a[2], a[3])
         elif c == 'map-import': cmd_map_import(a[1], a[2])
         elif c == 'map-render': cmd_map_render(a[1], a[2], a[3])
+        elif c == 'masters': cmd_masters(a[1])
         elif c == 'natials': cmd_natials(a[1])
+        elif c == 'natials-export': cmd_natials_export(a[1], a[2])
+        elif c == 'natials-import': cmd_natials_import(a[1], a[2], a[3])
         elif c == 'text-export': cmd_text_export(a[1], a[2])
         elif c == 'text-import': cmd_text_import(a[1], a[2], a[3])
         else: print(__doc__)
