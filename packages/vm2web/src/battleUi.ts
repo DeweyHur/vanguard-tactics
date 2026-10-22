@@ -121,7 +121,7 @@ export function initBattle(deps: BattleDeps) {
     const L = lightAt(b.s.clock); if (L) { g.fillStyle = L === 2 ? 'rgba(10,15,50,.45)' : 'rgba(40,20,50,.2)'; g.fillRect(cam.x / cam.z, cam.y / cam.z, canvas.width / cam.z, canvas.height / cam.z); }
     for (const k of Object.keys(b.s.stones)) { const r = Math.floor(+k / 32), c = +k % 32; const own = b.s.stones[+k]; const p = center(r, c); hexPath(g, p.x, p.y); g.lineWidth = 1.5; g.strokeStyle = own === 0 ? '#4af' : own === 1 ? '#f66' : '#ee4'; g.stroke(); }
     const u0 = mine();
-    const lit: { r: number; c: number }[] = u0 && !summonIdx && summonIdx < 0 && !magicMode ? [...b.reachable(u0).values()] : [];
+    const lit: { r: number; c: number }[] = u0 && summonIdx < 0 && !magicMode ? [...b.reachable(u0).values()] : [];
     const tg = u0 ? (magicMode ? b.magicTargets(u0) : b.targetsFrom(u0, u0.r, u0.c)) : [];
     const sc = u0 && summonIdx >= 0 ? b.summonCells(0, b.natials[summonIdx]) : [];
     for (const v of lit) fillHex(v.r, v.c, 'rgba(80,160,255,.35)');
