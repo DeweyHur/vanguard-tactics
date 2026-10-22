@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VM2 Workbench</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header>
+    <b>VM2 WORKBENCH</b>
+    <nav>
+      <button data-tab="files" class="on">파일</button>
+      <button data-tab="maps">맵</button>
+      <button data-tab="natials">네이티얼</button>
+      <button data-tab="masters">마스터</button>
+    </nav>
+    <span id="status" class="muted"></span>
+    <span class="spacer"></span>
+    <button id="btnExportDat" title="수정한 맵/텍스트를 담은 DATA10.DAT">DATA10.DAT 다운로드</button>
+    <button id="btnExportExe" title="수정한 네이티얼 스탯을 담은 Vmtv2.exe">Vmtv2.exe 다운로드</button>
+  </header>
+  <main>
+    <section id="tab-files" class="tab">
+      <div class="card">
+        <h2>게임 파일 불러오기</h2>
+        <p>밴티지 마스터 V2 게임 폴더의 <code>DATA00.DAT … DATA13.DAT</code>와 <code>Vmtv2.exe</code>를 아래에 끌어다 놓거나 선택하세요.<br/>
+        파일은 <b>이 브라우저 안(IndexedDB)에만</b> 저장되고 어디로도 전송되지 않습니다. 최소 <code>DATA10.DAT</code>(맵·텍스트), 스탯 편집에는 <code>Vmtv2.exe</code>가 필요합니다.</p>
+        <div id="drop">여기에 파일 놓기 / 클릭해서 선택<input id="fileInput" type="file" multiple hidden /></div>
+        <div id="fileList"></div>
+        <div class="row"><button id="btnClear">저장된 파일 전부 지우기</button><button id="btnResetMods">수정 내용 전부 되돌리기</button></div>
+      </div>
+    </section>
+    <section id="tab-maps" class="tab hidden">
+      <aside id="mapList"></aside>
+      <div id="mapwrap"><canvas id="map"></canvas><div id="hud"></div></div>
+      <aside id="side">
+        <div class="sec">
+          <div class="row"><input id="inpName" size="14" title="맵 이름 (15바이트)" /><span class="muted">#<span id="mapNo"></span></span></div>
+          <div class="row"><label>줌 <select id="selZoom"><option>1</option><option selected>2</option><option>3</option></select></label>
+            <label title="이 맵의 편집 결과를 다른 슬롯에 저장(복제)">저장 슬롯 <select id="selTarget"></select></label><button id="btnCopySlot">복제</button></div>
+          <div class="row"><span>브러시 <b id="brushInfo">—</b></span></div>
+          <div class="row"><label>지형 <select id="fTerrain"></select></label><label>높이 <select id="fHeight"></select></label><label><input type="checkbox" id="fUsed" /> 쓰인 타일만</label></div>
+        </div>
+        <div id="pal"></div>
+        <div class="sec">
+          <div class="muted">설명문</div><textarea id="txtDesc"></textarea>
+          <div class="muted">해설</div><textarea id="txtDesc2" style="height:56px"></textarea>
+          <div class="muted small">좌클릭 칠하기 · 우클릭 스포이드 · 가운데 드래그/방향키 스크롤 · 휠 줌 · 텍스트는 원본 바이트 예산 안에서</div>
+        </div>
+      </aside>
+    </section>
+    <section id="tab-natials" class="tab hidden"><div class="card wide"><h2>네이티얼 24종 <span class="muted small">(Vmtv2.exe .data 0x46DE80 — 값을 고치면 "Vmtv2.exe 다운로드"에 반영)</span></h2><div id="natTable"></div></div></section>
+    <section id="tab-masters" class="tab hidden"><div class="card wide"><h2>적 마스터 38명</h2><div id="masterTable"></div></div></section>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

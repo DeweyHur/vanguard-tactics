@@ -4,3 +4,4 @@ dist/
 *.log
 
 _to_delete_*
+.sync/
