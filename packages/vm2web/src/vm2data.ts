@@ -37,7 +37,8 @@ export interface Master { index: number; name: string; cls: number; desc: string
 export interface Portrait { w: number; h: number; pixels: Uint8Array; pal: Uint8Array }
 export interface Sprite { frames: Uint8Array[]; w: number; h: number }
 /** DATA02 entry (blue team) holding each natial's map sprite; red team = +2. Order was identified visually. */
-export const NATIAL_SPRITE: number[] = [106, 94, 98, 102, 110, 114, 118, 122, 126, 130, 134, 138, 142, 146, 150, 154, 158, 162, 166, 170, 174, 178, 182, 186];
+/** natial k -> DATA02 entry: 90 + 4k (blue team; red team is +2) */
+export const NATIAL_SPRITE: number[] = Array.from({ length: 24 }, (_, k) => 90 + 4 * k);
 export const MASTER_SPRITE = (m: number) => (m < 18 ? m * 4 : 72 + (m - 18) * 2);
 /** DATA01 index of the walk sheet for a DATA02 sprite entry (resource table pairs 1:k with 2:2k; 186..202 map to 183..191) */
 export const WALK_ENTRY = (data02Entry: number) => (data02Entry >= 186 ? 183 + (data02Entry - 186) / 2 : data02Entry / 2);
@@ -126,8 +127,9 @@ export class VM2Data {
       for (let rec = 0; rec < 2; rec++) for (let s = 0; s < 48; s++) {
         const i = dv.getUint16((p * 2 + rec) * 96 + s * 2, true); if (i === 0x7ff || i >= n) continue;
         const c = s >> 3, cy = (7 - (s & 7)) * 12; let f: number, cx: number;
-        if (rec === 0) { if (c < 4) { f = 0; cx = c * 24; } else { f = 2; cx = (c - 4) * 24; } }
-        else if (c >= 2) { f = 1; cx = (c - 2) * 24; } else { f = 2; cx = (c + 2) * 24; }
+        // a record pair is 12 columns = three consecutive 96px frames: cols 0-3, 4-7, 8-11
+        if (rec === 0) { if (c < 4) { f = 0; cx = c * 24; } else { f = 1; cx = (c - 4) * 24; } }
+        else if (c < 2) { f = 1; cx = (c + 2) * 24; } else { f = 2; cx = (c - 2) * 24; }
         for (let y = 0; y < 12; y++) F[f].set(atlas.subarray(i * 288 + y * 24, i * 288 + y * 24 + 24), (cy + y) * W + cx);
       }
       frames.push(...F);

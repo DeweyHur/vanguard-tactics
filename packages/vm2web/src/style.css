@@ -50,3 +50,5 @@ td input { width: 56px; padding: 1px 3px; text-align: right; } td input.chg { bo
 
 .dirgrid { display: flex; flex-wrap: wrap; gap: 6px; } .dircell { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 4px; background: #15171d; }
 .dircell .row { gap: 2px; } .dircell select { font-size: 11px; }
+.gallery { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; } .gal { width: 96px; padding: 4px; border: 1px solid var(--line); border-radius: 4px; background: #15171d; cursor: pointer; text-align: center; } .gal:hover { border-color: var(--acc); } .gal.sel { border-color: var(--acc); background: #22262f; }
+.gal .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .thumb { image-rendering: pixelated; background: #2b2f3a; } tr.clickable { cursor: pointer; } tr.clickable:hover td { background: #1c1f27; }

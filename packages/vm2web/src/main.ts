@@ -245,6 +245,7 @@ function walkAnimOf(entry: number, frames: number[], scale = 2, label = true): H
 let animTick = 0;
 setInterval(() => {
   if ($('tab-sprites').classList.contains('hidden') || !anims.length) return; animTick++;
+  if (animTick % 40 === 0) anims.splice(0, anims.length, ...anims.filter((a) => a.c.isConnected));
   for (const a of anims) { if (!a.c.isConnected) continue; const src = a.src(animTick); const g = a.c.getContext('2d')!; g.imageSmoothingEnabled = false; g.clearRect(0, 0, a.c.width, a.c.height); if (src) g.drawImage(src, 0, 0, a.c.width, a.c.height); const l = a.label(animTick); if (l) { g.fillStyle = '#ffd24a'; g.font = '10px monospace'; g.fillText(l, 2, 10); } }
 }, 1000 / animFps);
 /** 8 cells, one per clock direction, with the walk cycle and the attack pose that the current facing tables assign to it */
@@ -274,7 +275,7 @@ function buildDirs() {
     <div class="muted small" style="margin-top:8px">방향별 보기 (걷기 · 공격 포즈)</div><div id="dirView"></div>`;
   const wk = $('dirWalk'); for (let f = 0; f < 16; f++) { const d = document.createElement('div'); d.className = 'dircell'; const c = walkFrame(dirEntry, f); const t = document.createElement('canvas'); t.width = 96; t.height = 144; t.className = 'anim'; if (c) { const g = t.getContext('2d')!; g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, 96, 144); } d.innerHTML = `<div class="small">W${f}</div>`; d.appendChild(t); d.insertAdjacentHTML('beforeend', clockSel(facing.walkClock[f])); d.querySelector('select')!.onchange = (ev) => { facing.walkClock[f] = +(ev.target as HTMLSelectElement).value; edits.walkClock = [...facing.walkClock]; saveEdits(); rebuildDirView(); }; wk.appendChild(d); }
   const pk = $('dirPose'); for (let gI = 0; gI < 6; gI++) { const d = document.createElement('div'); d.className = 'dircell'; d.innerHTML = `<div class="small">P${gI * 3}-${gI * 3 + 2}</div>`; d.appendChild(animOf(dirEntry, [gI * 3, gI * 3 + 1, gI * 3 + 2], 1)); d.insertAdjacentHTML('beforeend', clockSel(facing.poseClock[gI])); d.querySelector('select')!.onchange = (ev) => { facing.poseClock[gI] = +(ev.target as HTMLSelectElement).value; edits.poseClock = [...facing.poseClock]; saveEdits(); rebuildDirView(); }; pk.appendChild(d); }
-  const rebuildDirView = () => { const v = $('dirView'); v.innerHTML = ''; v.appendChild(dirGrid(dirEntry, 2)); document.querySelectorAll<HTMLElement>('#spriteMap .dir-cell').forEach((c) => { const e = +c.dataset.e!; c.innerHTML = ''; c.appendChild(dirGrid(e, 1)); }); document.querySelectorAll<HTMLElement>('#spriteAll .sprow').forEach((r) => { const e = +r.dataset.e!; r.replaceChild(entryDirRows(e), r.lastElementChild!); }); };
+  const rebuildDirView = () => { const v = $('dirView'); v.innerHTML = ''; v.appendChild(dirGrid(dirEntry, 2)); if (shownEntry >= 0) showEntry(shownEntry, $('spriteDetail').querySelector('h3')?.textContent?.replace(/^#\d+ /, '') ?? ''); };
   rebuildDirView();
   $<HTMLSelectElement>('dirEntry').onchange = (ev) => { dirEntry = +(ev.target as HTMLSelectElement).value; buildDirs(); };
   $('dirReset').onclick = () => { facing.load({}); delete edits.walkClock; delete edits.poseClock; saveEdits(); buildDirs(); };
@@ -305,25 +306,52 @@ function entryDirRows(e: number): HTMLElement {
   return box;
 }
 const nameOfEntry = (e: number) => { const nats = loaded ? data.natials() : []; const k = nats.findIndex((_, i) => spriteEntryFor(i) === e); return k >= 0 ? nats[k].name : ''; };
+/** 48x48 static thumbnail (frame 0, cropped to the body) of a DATA02 entry */
+function thumbOf(e: number): HTMLCanvasElement {
+  const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.className = 'thumb'; const sp = spriteFrame(e, 0);
+  if (sp) { const g = t.getContext('2d')!; g.imageSmoothingEnabled = false; g.drawImage(sp, 24, 36, 48, 48, 0, 0, 48, 48); }
+  return t;
+}
+let shownEntry = -1;
+/** show one entry's motions in the detail panel (only this entry animates) */
+function showEntry(e: number, title: string) {
+  shownEntry = e; const det = $('spriteDetail'); det.innerHTML = ''; anims.splice(0, anims.length, ...anims.filter((a) => a.c.isConnected));
+  const h = document.createElement('h3'); h.textContent = `#${e} ${title}`; det.appendChild(h);
+  const row = document.createElement('div'); row.className = 'sprow-body'; row.appendChild(animOf(e, Array.from({ length: 18 }, (_, i) => i))); row.appendChild(entryDirRows(e)); det.appendChild(row);
+  const st = document.createElement('div'); st.className = 'muted small'; st.textContent = '전체 18프레임'; det.appendChild(st); det.appendChild(stripOf(e, Array.from({ length: 18 }, (_, i) => i)));
+  document.querySelectorAll<HTMLElement>('#spriteAll .gal').forEach((g) => g.classList.toggle('sel', +g.dataset.e! === e));
+  det.scrollIntoView({ block: 'nearest' });
+}
 function buildSprites() {
-  const mapEl = $('spriteMap'), allEl = $('spriteAll'); mapEl.innerHTML = ''; allEl.innerHTML = ''; anims.length = 0;
+  const mapEl = $('spriteMap'), allEl = $('spriteAll'); mapEl.innerHTML = ''; allEl.innerHTML = ''; $('spriteDetail').innerHTML = ''; anims.length = 0;
   if (!loaded || !data.has('DATA02')) { mapEl.innerHTML = '<p class="muted">DATA00.DAT + DATA02.DAT를 넣으면 스프라이트가 나옵니다.</p>'; return; }
   const entries: number[] = []; data.entries.DATA02.forEach((e, i) => { if (i % 2 === 0 && e.length && data.entries.DATA02[i + 1]?.length) entries.push(i); });
   const nats = data.natials();
   buildDirs();
-  const tbl = document.createElement('table'); tbl.innerHTML = '<tr><th>#</th><th>초상화</th><th>이름</th><th>엔트리</th><th>파란팀 프레임 0~5</th><th>방향별 (걷기 · 공격)</th></tr>';
+  // mapping table: portrait, name, entry select, static thumbnail; click = details
+  const tbl = document.createElement('table'); tbl.innerHTML = '<tr><th>#</th><th>초상화</th><th>이름</th><th>엔트리</th><th>스프라이트</th></tr>';
   for (let k = 0; k < 24; k++) {
-    const tr = document.createElement('tr'); const cur = spriteEntryFor(k);
-    tr.innerHTML = `<td>${k}</td><td class="port"></td><td class="l">${nats[k]?.name ?? ''}</td><td><select>${entries.map((e) => `<option value="${e}" ${e === cur ? 'selected' : ''}>${e}</option>`).join('')}</select></td><td class="l strip-cell"></td><td class="l dir-cell" data-e="${cur}"></td>`;
+    const tr = document.createElement('tr'); const cur = spriteEntryFor(k); tr.className = 'clickable';
+    tr.innerHTML = `<td>${k}</td><td class="port"></td><td class="l">${nats[k]?.name ?? ''}</td><td><select>${entries.map((e) => `<option value="${e}" ${e === cur ? 'selected' : ''}>${e}</option>`).join('')}</select></td><td class="l thumb-cell"></td>`;
     const pc = portrait(k); if (pc) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.getContext('2d')!.drawImage(pc, 0, 0, 48, 48 * pc.height / pc.width); tr.querySelector('.port')!.appendChild(t); }
-    const cell = tr.querySelector('.strip-cell')!; cell.appendChild(animOf(cur, Array.from({ length: 18 }, (_, i) => i), 1)); cell.appendChild(stripOf(cur, [0, 1, 2, 3, 4, 5]));
-    const dcell = tr.querySelector<HTMLElement>('.dir-cell')!; dcell.appendChild(dirGrid(cur, 1));
-    tr.querySelector('select')!.onchange = (ev) => { const v = +(ev.target as HTMLSelectElement).value; edits.spriteMap = { ...(edits.spriteMap ?? {}), [k]: v }; saveEdits(); cell.innerHTML = ''; cell.appendChild(animOf(v, Array.from({ length: 18 }, (_, i) => i), 1)); cell.appendChild(stripOf(v, [0, 1, 2, 3, 4, 5])); dcell.dataset.e = `${v}`; dcell.innerHTML = ''; dcell.appendChild(dirGrid(v, 1)); };
+    const cell = tr.querySelector<HTMLElement>('.thumb-cell')!; cell.appendChild(thumbOf(cur));
+    tr.onclick = (ev) => { if ((ev.target as HTMLElement).tagName === 'SELECT') return; showEntry(spriteEntryFor(k), `${nats[k]?.name ?? ''} 파랑`); };
+    tr.querySelector('select')!.onchange = (ev) => { const v = +(ev.target as HTMLSelectElement).value; edits.spriteMap = { ...(edits.spriteMap ?? {}), [k]: v }; saveEdits(); cell.innerHTML = ''; cell.appendChild(thumbOf(v)); showEntry(v, `${nats[k]?.name ?? ''} 파랑`); };
     tbl.appendChild(tr);
   }
   mapEl.appendChild(tbl);
-  for (const e of entries) { const row = document.createElement('div'); row.className = 'sprow'; row.dataset.e = `${e}`; const lab = document.createElement('div'); lab.className = 'muted small'; lab.textContent = `#${e}` + (e < 72 ? ` (마스터 ${Math.floor(e / 4)}${e % 4 ? ' 빨강' : ' 파랑'})` : ` (${nameOfEntry(e)})`); row.appendChild(lab);
-    row.appendChild(entryDirRows(e)); allEl.appendChild(row); }
+  // gallery: static thumbnails by section; click = details
+  const team = (e: number, base = 0) => ((e - base) % 4 ? '빨강' : '파랑');
+  const section = (title: string, list: number[], label: (e: number) => string) => {
+    if (!list.length) return; const h = document.createElement('h3'); h.textContent = `${title} (${list.length})`; allEl.appendChild(h);
+    const grid = document.createElement('div'); grid.className = 'gallery';
+    for (const e of list) { const g = document.createElement('div'); g.className = 'gal'; g.dataset.e = `${e}`; g.appendChild(thumbOf(e)); const l = document.createElement('div'); l.className = 'small'; l.textContent = `#${e} ${label(e)}`; g.appendChild(l); g.onclick = () => showEntry(e, label(e)); grid.appendChild(g); }
+    allEl.appendChild(grid);
+  };
+  section('마스터', entries.filter((e) => e < 72), (e) => `마스터 ${Math.floor(e / 4)} ${team(e)}${data.masters[Math.floor(e / 4)]?.name ? ' · ' + data.masters[Math.floor(e / 4)].name : ''}`);
+  section('소환수', entries.filter((e) => e >= 90 && e < 90 + 24 * 4), (e) => `${nats[Math.floor((e - 90) / 4)]?.name ?? ''} ${team(e, 90)}`);
+  section('기타', entries.filter((e) => (e >= 72 && e < 90) || e >= 90 + 24 * 4), (e) => nameOfEntry(e));
+  if (shownEntry >= 0 && entries.includes(shownEntry)) showEntry(shownEntry, ''); 
 }
 function midFiles(): string[] { return loaded ? Object.keys(data.extra).filter((n) => n.endsWith('.MID')).sort() : []; }
 function portrait(k: number): HTMLCanvasElement | null {
