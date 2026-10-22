@@ -3,7 +3,7 @@
  * chosen to feel like Vantage Master. Every number the engine uses lives here.
  */
 export const RULES = {
-  masterHp: 40, masterAtk: 12, masterDef: 8, masterMove: 4,
+  masterHp: 60, masterAtk: 12, masterDef: 8, masterMove: 4,
   mpStart: 600, mpRegen: 150, mpPerStone: 120, mpMax: 3000,
   /** terrain id -> cost per move type (Infinity = impassable). order: 걷기, 걷기2, 헤엄, 헤엄2, 날기 */
   moveCost: {
@@ -19,6 +19,8 @@ export const RULES = {
   /** magic stone terrain -> element it empowers (12 땅, 13 물, 14 불, 15 하늘) */
   stoneElement: { 12: 1, 13: 2, 14: 3, 15: 4 } as Record<number, number>,
   stoneBoost: 1.2, heightBonus: 0.1, counterMult: 0.75,
+  /** terrain defence % (the game shows e.g. 마법석 방어 30%); damage is reduced by this fraction */
+  terrainDef: { 2: 15, 3: 10, 12: 30, 13: 30, 14: 30, 15: 30 } as Record<number, number>,
   /** kills needed to reach level 2 / 3 */
   levelKills: [0, 1, 3],
   zocIgnoreMoveType: 4,

@@ -199,7 +199,7 @@ $('btnCopySlot').onclick = () => {
 };
 
 // ---------- natials ----------
-const STAT = ['스탯1', '스탯2', '스탯3', '스탯4', '스탯5'];
+const STAT = ['공격', '방어', '마공', '마방', '속도'];
 const portraitCache = new Map<number, HTMLCanvasElement | null>();
 const spriteCache = new Map<string, HTMLCanvasElement | null>();
 /** 96x96 canvas of one frame of a DATA02 sprite entry (centred at x=48); dataset.bottom = last opaque row (feet) */
@@ -285,7 +285,7 @@ function buildNatials() {
     for (let k = 0; k < 5; k++) for (let l = 0; l < 3; l++) html += inp(`stats.${k}.${l}`, e.stats[k][l], n.stats[k][l]);
     html += inp('move', e.move, n.move) + `<td>${ELEMENT[e.element] ?? e.element}</td>` + inp('flag1', e.flag1, n.flag1) + inp('range', e.range, n.range) + inp('spell', e.spell, n.spell) + `<td>${MOVETYPE[e.moveType] ?? e.moveType}</td>` + inp('cost', e.cost, n.cost) + '</tr>';
   }
-  host.innerHTML = html + '</table><p class="muted small">스탯1~5의 의미(공/방/마/마방/속도 추정)는 아직 미확인. 각 스탯은 레벨 1·2·3 값.</p>';
+  host.innerHTML = html + '</table><p class="muted small">게임 정보창 순서(⚔공격 🛡방어 ✨마공 🔰마방 👢속도)와 대조해 확인. 각 스탯은 레벨 1·2·3 값.</p>';
   host.querySelectorAll<HTMLElement>('td.port').forEach((td) => { const k = +td.dataset.k!; const c = portrait(k); if (c) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.getContext('2d')!.drawImage(c, 0, 0, 48, 48 * c.height / c.width); td.appendChild(t); }
     const sp = spriteFrame(spriteEntryFor(k), 0); if (sp) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.style.imageRendering = 'pixelated'; t.getContext('2d')!.drawImage(sp, 24, 40, 48, 48, 0, 0, 48, 48); td.appendChild(t); } });
   host.querySelectorAll<HTMLInputElement>('input').forEach((inp) => inp.onchange = () => {

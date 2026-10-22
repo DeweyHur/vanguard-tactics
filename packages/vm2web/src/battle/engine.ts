@@ -48,7 +48,8 @@ export class Battle {
     const st = RULES.stoneElement[this.map.terrain(a.r, a.c)]; if (st !== undefined && st === a.def.element) atk *= RULES.stoneBoost;
     let mult = elemMult(a.def.element, d.def.element);
     const dh = this.map.height(a.r, a.c) - this.map.height(d.r, d.c); if (dh > 0) mult += RULES.heightBonus; else if (dh < 0) mult -= RULES.heightBonus;
-    return Math.max(1, Math.round((atk - def * 0.5) * mult));
+    const tdef = (RULES.terrainDef[this.map.terrain(d.r, d.c)] ?? 0) / 100;
+    return Math.max(1, Math.round((atk - def * 0.5) * mult * (1 - tdef)));
   }
 
   // ---- actions (return error string or null) ----

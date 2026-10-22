@@ -111,7 +111,7 @@ export function initBattle(deps: BattleDeps) {
       if (u.level > 1 && sp) { g.fillStyle = '#ffd24a'; g.font = 'bold 9px monospace'; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillText(`L${u.level}`, p.x + 13, p.y + 11); }
       if ((!u.moved || !u.acted) && u.side === b.s.side && b.s.side === 0) { g.fillStyle = '#fff'; g.beginPath(); g.arc(p.x + 14, p.y - 6, 3, 0, Math.PI * 2); g.fill(); }
     }
-    if (hover) { const p = center(hover.r, hover.c); hexPath(g, p.x, p.y); g.lineWidth = 1; g.strokeStyle = '#ff0'; g.stroke(); const d = ts.defs[grid[hover.r * 32 + hover.c]]; const u = b.unitAt(hover.r, hover.c); $('bhud').textContent = `(${hover.r},${hover.c}) ${TERRAIN[d.terrain] ?? d.terrain} 높이 ${d.height}${u ? ` · ${u.def.name} HP ${u.hp}/${u.def.hp}` : ''}`; }
+    if (hover) { const p = center(hover.r, hover.c); hexPath(g, p.x, p.y); g.lineWidth = 1; g.strokeStyle = '#ff0'; g.stroke(); const d = ts.defs[grid[hover.r * 32 + hover.c]]; const u = b.unitAt(hover.r, hover.c); $('bhud').textContent = `(${hover.r},${hover.c}) ${TERRAIN[d.terrain] ?? d.terrain} 높이 ${d.height} 방어 ${RULES.terrainDef[d.terrain] ?? 0}%${u ? ` · ${u.def.name} HP ${u.hp}/${u.def.hp}` : ''}`; }
     g.restore();
   }
 
@@ -122,7 +122,7 @@ export function initBattle(deps: BattleDeps) {
     if (!b) { info.textContent = ''; ui.textContent = ''; sm.innerHTML = ''; $('bLog').textContent = ''; return; }
     const s = b.s; const st = (side: 0 | 1) => Object.values(s.stones).filter((o) => o === side).length;
     info.innerHTML = s.winner >= 0 ? `<b style="color:var(--acc)">${s.names[s.winner as 0 | 1]} 승리!</b> (턴 ${s.turn})` : `턴 ${s.turn} · <b>${s.side === 0 ? '내 차례' : '봇 차례'}</b><br><span class="e2">${s.names[0]}</span> MP ${s.mp[0]} 마법석 ${st(0)} · <span class="e3">${s.names[1]}</span> MP ${s.mp[1]} 마법석 ${st(1)}`;
-    if (sel) { const u = sel; ui.innerHTML = `${portraitHtml(u.def.id)}<b>${u.def.name}</b> <span class="e${u.def.element}">${ELEMENT[u.def.element] ?? ''}</span> Lv${u.level}<br>HP ${u.hp}/${u.def.hp} · 공 ${b.stat(u, 0)} 방 ${b.stat(u, 1)} · 이동 ${u.def.move} 사정 ${u.def.range}<br><span class="muted">${u.moved ? '이동 완료' : '이동 가능'} · ${u.acted ? '행동 완료' : '행동 가능'}</span>`; }
+    if (sel) { const u = sel; ui.innerHTML = `${portraitHtml(u.def.id)}<b>${u.def.name}</b> <span class="e${u.def.element}">${ELEMENT[u.def.element] ?? ''}</span> Lv${u.level}<br>HP ${u.hp}/${u.def.hp} · 공 ${b.stat(u, 0)} 방 ${b.stat(u, 1)} 마공 ${b.stat(u, 2)} 마방 ${b.stat(u, 3)} 속 ${b.stat(u, 4)} · 이동 ${u.def.move} 사정 ${u.def.range}<br><span class="muted">${u.moved ? '이동 완료' : '이동 가능'} · ${u.acted ? '행동 완료' : '행동 가능'}</span>`; }
     else ui.innerHTML = '<span class="muted">유닛을 클릭하세요</span>';
     ui.querySelectorAll<HTMLElement>('.pbox').forEach(mountPortrait);
     const my = s.side === 0 && s.winner < 0;
