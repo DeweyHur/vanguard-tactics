@@ -37,6 +37,9 @@ packages/
 ### 멀티플레이로 가는 길
 `Match.command(player, cmd)` + `Match.tick()`이 전부라서, 서버는 두 클라이언트의 명령을 받아 틱을 돌리고 상태를 브로드캐스트하면 된다 (`packages/server` 예정). 전투는 시드만 보내면 클라이언트가 동일하게 재생할 수 있다.
 
+## 참고: Vantage Master V2 모딩 툴
+`tools/vm2/vm2.py` — LB DAT 언팩/리팩, 맵 텍스트·타일맵 export/import, 도식 렌더. 포맷 노트는 `docs/vm2-formats.md`. 게임 에셋은 리포에 넣지 않는다.
+
 ## 미결 / TODO
 - 시야(안개) 없음 — 현재 전 지도 공개.
 - 수송전 모드, 2v2.
