@@ -35,6 +35,10 @@ export interface Tileset { key: string; imgEntry: number; palEntry: number; defE
 export interface MapInfo { index: number; header: MapHeader; tileset: Tileset; tilemapEntry: number; grid: Uint16Array }
 export interface Master { index: number; name: string; cls: number; desc: string }
 export interface Portrait { w: number; h: number; pixels: Uint8Array; pal: Uint8Array }
+export interface Sprite { frames: Uint8Array[]; w: number; h: number }
+/** DATA02 entry (blue team) holding each natial's map sprite; red team = +2. Order was identified visually. */
+export const NATIAL_SPRITE: number[] = [106, 94, 98, 102, 110, 114, 118, 122, 126, 130, 134, 138, 142, 146, 150, 154, 158, 162, 166, 170, 174, 178, 182, 186];
+export const MASTER_SPRITE = (m: number) => (m < 18 ? m * 4 : 72 + (m - 18) * 2);
 export interface Natial { index: number; name: string; attack: string; hp: number; stats: number[][]; move: number; element: number; flag1: number; range: number; spell: number; moveType: number; cost: number }
 
 export function parseHeader(raw: Uint8Array): MapHeader {
@@ -92,6 +96,35 @@ export class VM2Data {
     }
   }
   has(file: string) { return !!this.entries[file]; }
+  /**
+   * 256-entry RGBA lookup as the game assembles it (vmv2.exe @0x422c32): 10-15 SYSPAL[0..5], 16 transparent,
+   * 17.. map palette (43), 60-99 CHRPAL, 100-127 SYSPAL[12..39], 240-245 SYSPAL[6..11]. Without DATA00 the
+   * shared banks fall back to greys.
+   */
+  palette(mapPal?: Uint8Array): Uint8Array {
+    const lut = new Uint8Array(256 * 4);
+    for (let i = 0; i < 256; i++) { const g = i === 16 ? 0 : 128; lut[i * 4] = lut[i * 4 + 1] = lut[i * 4 + 2] = g; lut[i * 4 + 3] = i === 16 ? 0 : 255; }
+    const put = (dst: number, src: Uint8Array, from: number, n: number) => { for (let k = 0; k < n && (from + k) * 4 + 2 < src.length; k++) { const o = (dst + k) * 4, q = (from + k) * 4; lut[o] = src[q]; lut[o + 1] = src[q + 1]; lut[o + 2] = src[q + 2]; lut[o + 3] = 255; } };
+    if (this.entries.DATA00) { const sys = this.get('DATA00', 1), chr = this.get('DATA00', 2); put(10, sys, 0, 6); put(240, sys, 6, 6); put(100, sys, 12, 28); put(60, chr, 0, 40); }
+    if (mapPal) put(17, mapPal, 0, mapPal.length >> 2);
+    return lut;
+  }
+  /** map sprite from DATA02: 24x12 chunk atlas + placement table; every record pair is a 6x8 chunk grid = three 48x48 frames */
+  sprite(entry: number): Sprite | null {
+    if (!this.entries.DATA02 || !this.entries.DATA02[entry]?.length) return null;
+    const atlas = this.get('DATA02', entry), defs = this.get('DATA02', entry + 1); const n = Math.floor(atlas.length / 288);
+    const dv = new DataView(defs.buffer, defs.byteOffset, defs.byteLength); const frames: Uint8Array[] = [];
+    for (let p = 0; p * 192 + 192 <= defs.length; p++) {
+      const grid = new Uint8Array(144 * 96).fill(16);
+      for (let rec = 0; rec < 2; rec++) for (let s = 0; s < 48; s++) {
+        const i = dv.getUint16((p * 2 + rec) * 96 + s * 2, true); if (i === 0x7ff || i >= n) continue;
+        const cx = (s >> 3) * 24, cy = (7 - (s & 7)) * 12;
+        for (let y = 0; y < 12; y++) grid.set(atlas.subarray(i * 288 + y * 24, i * 288 + y * 24 + 24), (cy + y) * 144 + cx);
+      }
+      for (let f = 0; f < 3; f++) { const fr = new Uint8Array(48 * 96); for (let y = 0; y < 96; y++) fr.set(grid.subarray(y * 144 + f * 48, y * 144 + f * 48 + 48), y * 48); frames.push(fr); }
+    }
+    return { frames, w: 48, h: 96 };
+  }
   /** natial portrait k (0..23) from DATA09: script entry 27+k names the image entry and its crop box */
   portrait(k: number): Portrait | null {
     if (!this.entries.DATA09) return null;
@@ -128,9 +161,18 @@ export class VM2Data {
     for (const [sva, size, ro] of this.exeSections()) if (rva >= sva && rva < sva + size) return rva - sva + ro;
     throw new Error('va not mapped');
   }
+  private natBase = -1;
+  /** file offset of the 24-record natial table: known VA for the Korean build, otherwise scan the data sections for 24 records whose +0x50/+0x54 point at short strings */
+  natialTable(): number {
+    if (this.natBase >= 0) return this.natBase; const b = this.exe!;
+    const valid = (o: number) => { for (let i = 0; i < VM2Data.NAT_COUNT; i++) { const r = o + i * VM2Data.NAT_SIZE; if (r + 0x58 > b.length) return false; const dv = new DataView(b.buffer, b.byteOffset); for (const k of [0x50, 0x54]) { let so: number; try { so = this.vaToOff(dv.getUint32(r + k, true)); } catch { return false; } let n = 0; while (so + n < b.length && b[so + n] !== 0 && n < 32) { const c = b[so + n]; if (c < 32) return false; n++; } if (n === 0 || n >= 32) return false; } } return true; };
+    try { const o = this.vaToOff(VM2Data.NAT_VA); if (valid(o)) return (this.natBase = o); } catch { /* not mapped */ }
+    for (const [, size, ro] of this.exeSections()) for (let o = ro; o + VM2Data.NAT_SIZE * VM2Data.NAT_COUNT <= Math.min(b.length, ro + size); o += 4) if (valid(o)) return (this.natBase = o);
+    throw new Error('네이티얼 테이블을 EXE에서 찾지 못했습니다');
+  }
   natials(): Natial[] {
     if (!this.exe) return [];
-    const b = this.exe; const dv = new DataView(b.buffer, b.byteOffset, b.byteLength); const base = this.vaToOff(VM2Data.NAT_VA); const out: Natial[] = [];
+    const b = this.exe; const dv = new DataView(b.buffer, b.byteOffset, b.byteLength); const base = this.natialTable(); const out: Natial[] = [];
     for (let i = 0; i < VM2Data.NAT_COUNT; i++) {
       const o = base + i * VM2Data.NAT_SIZE; const u = (k: number) => dv.getUint32(o + k * 4, true);
       const stats = Array.from({ length: 5 }, (_, k) => [u(1 + 3 * k), u(2 + 3 * k), u(3 + 3 * k)]);
@@ -139,7 +181,7 @@ export class VM2Data {
     return out;
   }
   patchedExe(nats: Natial[]): Uint8Array {
-    const b = this.exe!.slice(); const dv = new DataView(b.buffer); const base = this.vaToOff(VM2Data.NAT_VA);
+    const b = this.exe!.slice(); const dv = new DataView(b.buffer); const base = this.natialTable();
     for (const n of nats) {
       const o = base + n.index * VM2Data.NAT_SIZE; dv.setUint32(o, n.hp, true);
       n.stats.forEach((s, k) => s.forEach((v, l) => dv.setUint32(o + 4 + (3 * k + l) * 4, v, true)));

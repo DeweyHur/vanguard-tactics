@@ -8,14 +8,14 @@ import { RULES } from './battle/rules';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 import type { Sfx } from './sound';
-export interface BattleDeps { data: () => VM2Data | null; natials: () => Natial[]; mapGrid: (m: MapInfo) => Uint16Array; mapTileset: (m: MapInfo) => Tileset; mapName: (m: MapInfo) => string; portrait: (k: number) => HTMLCanvasElement | null; sfx: Sfx }
+export interface BattleDeps { data: () => VM2Data | null; natials: () => Natial[]; mapGrid: (m: MapInfo) => Uint16Array; mapTileset: (m: MapInfo) => Tileset; mapName: (m: MapInfo) => string; portrait: (k: number) => HTMLCanvasElement | null; sfx: Sfx; sprite: (defId: string, side: 0 | 1, frame: number) => HTMLCanvasElement | null; masterSprite: (m: number, side: 0 | 1, frame: number) => HTMLCanvasElement | null; bgm: () => void; bgmStop: () => void }
 
 export function initBattle(deps: BattleDeps) {
   const canvas = $<HTMLCanvasElement>('bmap'), wrap = $('bwrap'), g = canvas.getContext('2d')!;
   const world = document.createElement('canvas'); const ws = worldSize(); world.width = ws.w; world.height = ws.h; const wg = world.getContext('2d')!;
   const cam = { x: 0, y: 0, z: 2 };
   let b: Battle | null = null, ts: Tileset | null = null, grid: Uint16Array | null = null, rend: TileRenderer | null = null;
-  let sel: Unit | null = null, summonIdx = -1, hover: Cell | null = null, busy = false;
+  let sel: Unit | null = null, summonIdx = -1, hover: Cell | null = null, busy = false; let masterIdx: [number, number] = [0, 1];
 
   const toUnitDef = (n: Natial): UnitDef => ({ id: `n${n.index}`, name: n.name, hp: n.hp, stats: n.stats, move: n.move, element: n.element, range: Math.max(1, n.range), moveType: Math.min(4, n.moveType), cost: n.cost });
 
@@ -41,14 +41,14 @@ export function initBattle(deps: BattleDeps) {
   $('bStart').onclick = () => {
     const d = deps.data(); if (!d) return; const nats = deps.natials();
     if (!nats.length) { $('bInfo').textContent = 'Vmtv2.exe가 필요합니다 (네이티얼 스탯)'; return; }
-    const m = d.maps[+$<HTMLSelectElement>('bMap').value]; ts = deps.mapTileset(m); grid = deps.mapGrid(m); rend = new TileRenderer(ts);
+    const m = d.maps[+$<HTMLSelectElement>('bMap').value]; ts = deps.mapTileset(m); grid = deps.mapGrid(m); rend = new TileRenderer(ts, d.palette(ts.pal));
     const T = ts, G = grid; const terrain: Terrain = { terrain: (r, c) => T.defs[G[r * 32 + c]].terrain, height: (r, c) => T.defs[G[r * 32 + c]].height };
-    const n0 = $<HTMLSelectElement>('bM0'), n1 = $<HTMLSelectElement>('bM1');
+    const n0 = $<HTMLSelectElement>('bM0'), n1 = $<HTMLSelectElement>('bM1'); masterIdx = [+n0.value - 52, +n1.value - 52];
     b = new Battle(terrain, nats.map(toUnitDef), [findStart(terrain, { r: 5, c: 5 }), findStart(terrain, { r: 26, c: 26 })], [n0.selectedOptions[0].text, n1.selectedOptions[0].text]);
     (window as unknown as { __battle: Battle; __cam: typeof cam }).__battle = b; (window as unknown as { __cam: typeof cam }).__cam = cam; sel = null; summonIdx = -1; $('bsetup').classList.add('hidden');
-    wg.clearRect(0, 0, ws.w, ws.h); drawMap(wg, rend, grid); fit(); refresh();
+    wg.clearRect(0, 0, ws.w, ws.h); drawMap(wg, rend, grid); fit(); refresh(); deps.bgm();
   };
-  $('bQuit').onclick = () => { b = null; $('bsetup').classList.remove('hidden'); refresh(); draw(); };
+  $('bQuit').onclick = () => { b = null; deps.bgmStop(); $('bsetup').classList.remove('hidden'); refresh(); draw(); };
   $('bEnd').onclick = async () => {
     if (!b || busy || b.s.winner >= 0) return; sel = null; summonIdx = -1; b.endTurn(); deps.sfx.role('turn'); refresh(); draw();
     busy = true; await new Promise((r) => setTimeout(r, 300)); const n0 = b.s.log.length; if (b.s.side === 1 && b.s.winner < 0) botTurn(b); busy = false;
@@ -72,14 +72,23 @@ export function initBattle(deps: BattleDeps) {
     if (sel && !sel.moved) for (const v of b.reachable(sel).values()) fillHex(v.r, v.c, 'rgba(80,160,255,.35)');
     if (sel && !sel.acted) for (const t of b.targetsFrom(sel, sel.r, sel.c)) fillHex(t.r, t.c, 'rgba(255,60,60,.45)');
     if (summonIdx >= 0) for (const p of b.summonCells(b.s.side, b.natials[summonIdx])) fillHex(p.r, p.c, 'rgba(80,255,120,.4)');
-    for (const u of b.s.units) {
-      if (u.hp <= 0) continue; const p = center(u.r, u.c);
-      g.beginPath(); g.arc(p.x, p.y, u.def.master ? 13 : 11, 0, Math.PI * 2); g.fillStyle = u.side === 0 ? '#2a6fd6' : '#d63a3a'; g.fill();
-      g.lineWidth = u === sel ? 3 : 1.5; g.strokeStyle = u.def.master ? '#ffd24a' : u === sel ? '#fff' : '#000'; g.stroke();
-      g.fillStyle = '#fff'; g.font = 'bold 11px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(u.def.master ? 'M' : (ELEMENT[u.def.element]?.[0] ?? '?') + (u.level > 1 ? u.level : ''), p.x, p.y);
+    const units = b.s.units.filter((u) => u.hp > 0).sort((x, y) => x.r - y.r || x.c - y.c);
+    for (const u of units) {
+      const p = center(u.r, u.c);
+      const sp = u.def.master ? deps.masterSprite(masterIdx[u.side], u.side, 0) : deps.sprite(u.def.id, u.side, 0);
+      if (sp) {
+        g.beginPath(); g.ellipse(p.x, p.y + 4, 16, 8, 0, 0, Math.PI * 2); g.fillStyle = u === sel ? 'rgba(255,255,255,.55)' : u.side === 0 ? 'rgba(60,120,255,.45)' : 'rgba(255,70,70,.45)'; g.fill();
+        g.drawImage(sp, p.x - 24, p.y + 8 - (+(sp.dataset.bottom ?? 90)));
+        if (u.def.master) { g.lineWidth = 2; g.strokeStyle = '#ffd24a'; g.beginPath(); g.ellipse(p.x, p.y + 4, 17, 9, 0, 0, Math.PI * 2); g.stroke(); }
+      } else {
+        g.beginPath(); g.arc(p.x, p.y, u.def.master ? 13 : 11, 0, Math.PI * 2); g.fillStyle = u.side === 0 ? '#2a6fd6' : '#d63a3a'; g.fill();
+        g.lineWidth = u === sel ? 3 : 1.5; g.strokeStyle = u.def.master ? '#ffd24a' : u === sel ? '#fff' : '#000'; g.stroke();
+        g.fillStyle = '#fff'; g.font = 'bold 11px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(u.def.master ? 'M' : (ELEMENT[u.def.element]?.[0] ?? '?') + (u.level > 1 ? u.level : ''), p.x, p.y);
+      }
       g.fillStyle = '#000'; g.fillRect(p.x - 12, p.y + 13, 24, 4); g.fillStyle = u.hp / u.def.hp > 0.5 ? '#4e4' : u.hp / u.def.hp > 0.25 ? '#ee4' : '#e44'; g.fillRect(p.x - 12, p.y + 13, 24 * u.hp / u.def.hp, 4);
-      if ((!u.moved || !u.acted) && u.side === b.s.side && b.s.side === 0) { g.fillStyle = '#fff'; g.beginPath(); g.arc(p.x + 9, p.y - 9, 3, 0, Math.PI * 2); g.fill(); }
+      if (u.level > 1 && sp) { g.fillStyle = '#ffd24a'; g.font = 'bold 9px monospace'; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillText(`L${u.level}`, p.x + 13, p.y + 11); }
+      if ((!u.moved || !u.acted) && u.side === b.s.side && b.s.side === 0) { g.fillStyle = '#fff'; g.beginPath(); g.arc(p.x + 14, p.y - 6, 3, 0, Math.PI * 2); g.fill(); }
     }
     if (hover) { const p = center(hover.r, hover.c); hexPath(g, p.x, p.y); g.lineWidth = 1; g.strokeStyle = '#ff0'; g.stroke(); const d = ts.defs[grid[hover.r * 32 + hover.c]]; const u = b.unitAt(hover.r, hover.c); $('bhud').textContent = `(${hover.r},${hover.c}) ${TERRAIN[d.terrain] ?? d.terrain} 높이 ${d.height}${u ? ` · ${u.def.name} HP ${u.hp}/${u.def.hp}` : ''}`; }
     g.restore();

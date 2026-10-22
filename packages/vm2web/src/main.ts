@@ -5,14 +5,16 @@ import { compressStore, writeArchive } from './lbdat';
 import { putFile, getAll, clearAll, download } from './store';
 import { initBattle } from './battleUi';
 import { Sfx, SFX_ROLES, DEFAULT_SFX, type SfxRole } from './sound';
-import { portraitCanvas } from './render';
+import { portraitCanvas, indexedCanvas } from './render';
+import { MidiPlayer } from './midi';
+import { NATIAL_SPRITE, MASTER_SPRITE } from './vm2data';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = (s: string) => { $('status').textContent = s; };
 
 // ---------- edit state (persisted in IndexedDB as __edits.json) ----------
 interface MapEdit { srcIndex: number; name: string; desc: string; desc2: string; grid: number[] }
-interface Edits { maps: Record<number, MapEdit>; natials: Record<number, Natial>; sfx?: Record<SfxRole, number> }
+interface Edits { maps: Record<number, MapEdit>; natials: Record<number, Natial>; sfx?: Record<SfxRole, number>; bgm?: string }
 let edits: Edits = { maps: {}, natials: {} };
 const sfxRoles = () => ({ ...DEFAULT_SFX, ...(edits.sfx ?? {}) });
 let saveTimer = 0;
@@ -25,7 +27,7 @@ function saveEdits() {
 const data = new VM2Data();
 let loaded = false;
 const renderers = new Map<string, TileRenderer>();
-const rendererFor = (m: MapInfo) => { const ts = headerBase(m) === m.header ? m.tileset : data.maps[edits.maps[m.index].srcIndex].tileset; let r = renderers.get(ts.key); if (!r) { r = new TileRenderer(ts); renderers.set(ts.key, r); } return r; };
+const rendererFor = (m: MapInfo) => { const ts = headerBase(m) === m.header ? m.tileset : data.maps[edits.maps[m.index].srcIndex].tileset; let r = renderers.get(ts.key); if (!r) { r = new TileRenderer(ts, data.palette(ts.pal)); renderers.set(ts.key, r); } return r; };
 const headerBase = (m: MapInfo): MapHeader => { const e = edits.maps[m.index]; return e && e.srcIndex !== m.index ? data.maps[e.srcIndex].header : m.header; };
 const gridOf = (m: MapInfo): Uint16Array => { const e = edits.maps[m.index]; return e ? Uint16Array.from(e.grid) : m.grid; };
 const textOf = (m: MapInfo) => { const e = edits.maps[m.index]; const h = m.header; return e ? { name: e.name, desc: e.desc, desc2: e.desc2 } : { name: h.name, desc: h.desc, desc2: h.desc2 }; };
@@ -46,8 +48,8 @@ async function loadAll() {
   if (!Object.keys(game).length) { status('파일 없음 — 파일 탭에서 게임 파일을 넣어주세요'); return; }
   try { data.load(game); loaded = true; renderers.clear(); }
   catch (e) { status(`읽기 실패: ${(e as Error).message}`); return; }
-  status(`맵 ${data.maps.length} · 타일셋 ${data.tilesets.size} · 마스터 ${data.masters.length}${data.exe ? ' · EXE 있음' : ' · EXE 없음(스탯 편집 불가)'}`);
-  buildMapList(); buildNatials(); buildMasters(); buildSound(); selectMap(cur); battle.populate(); sfx.reset(); portraitCache.clear();
+  status(`맵 ${data.maps.length} · 타일셋 ${data.tilesets.size} · 마스터 ${data.masters.length}${data.exe ? ' · EXE 있음' : ' · EXE 없음(스탯 편집 불가)'}${data.has('DATA02') ? ' · 스프라이트' : ''}${Object.keys(data.extra).length ? ` · MIDI ${Object.keys(data.extra).length}` : ''}`);
+  buildMapList(); buildNatials(); buildMasters(); buildSound(); selectMap(cur); battle.populate(); sfx.reset(); portraitCache.clear(); spriteCache.clear();
   if (!$('tab-maps').classList.contains('hidden')) fitView();
 }
 
@@ -62,7 +64,7 @@ async function ingest(fl: FileList) {
   let n = 0;
   for (const f of Array.from(fl)) {
     const up = f.name.toUpperCase();
-    if (!/^DATA\d\d\.DAT$/.test(up) && up !== 'VMTV2.EXE' && !up.endsWith('.MID')) continue;
+    if (!/^DATA\d\d\.DAT$/.test(up) && !up.endsWith('.EXE') && !up.endsWith('.MID')) continue;
     await putFile(up, new Uint8Array(await f.arrayBuffer())); n++;
   }
   status(`${n}개 저장`); await loadAll();
@@ -198,11 +200,32 @@ $('btnCopySlot').onclick = () => {
 // ---------- natials ----------
 const STAT = ['스탯1', '스탯2', '스탯3', '스탯4', '스탯5'];
 const portraitCache = new Map<number, HTMLCanvasElement | null>();
+const spriteCache = new Map<string, HTMLCanvasElement | null>();
+/** 48x96 canvas of one frame of a DATA02 sprite entry; dataset.bottom = last opaque row (feet) */
+function spriteFrame(entry: number, frame: number): HTMLCanvasElement | null {
+  const k = `${entry}:${frame}`;
+  if (!spriteCache.has(k)) {
+    const sp = loaded ? data.sprite(entry) : null; const fr = sp?.frames[frame]; let c: HTMLCanvasElement | null = null;
+    if (fr) { c = indexedCanvas(fr, 48, 96, data.palette()); let bottom = 95; while (bottom > 0 && !fr.subarray(bottom * 48, bottom * 48 + 48).some((v) => v !== 16)) bottom--; c.dataset.bottom = `${bottom}`; }
+    spriteCache.set(k, c);
+  }
+  return spriteCache.get(k) ?? null;
+}
+const midi = new MidiPlayer();
+function midFiles(): string[] { return loaded ? Object.keys(data.extra).filter((n) => n.endsWith('.MID')).sort() : []; }
 function portrait(k: number): HTMLCanvasElement | null {
   if (!portraitCache.has(k)) { const p = loaded ? data.portrait(k) : null; portraitCache.set(k, p ? portraitCanvas(p) : null); }
   return portraitCache.get(k) ?? null;
 }
 function buildSound() {
+  const mids = midFiles(); const bg = $('bgmRow');
+  bg.innerHTML = mids.length ? `<label>배틀 BGM <select id="bgmSel"><option value="">없음</option>${mids.map((m) => `<option value="${m}" ${edits.bgm === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label> <button id="bgmPlay">▶ 재생</button><button id="bgmStop">■ 정지</button> <label>볼륨 <input type="range" id="bgmVol" min="0" max="1" step="0.05" value="0.35"></label> <span class="muted small">(WebAudio 칩튠 신스로 재생 — 원곡 음색과 다릅니다)</span>` : '<span class="muted">MIDI 폴더의 *.MID 파일을 파일 탭에 넣으면 BGM을 고를 수 있습니다.</span>';
+  if (mids.length) {
+    const sel = $<HTMLSelectElement>('bgmSel'); sel.onchange = () => { edits.bgm = sel.value || undefined; saveEdits(); };
+    $('bgmPlay').onclick = () => { const f = sel.value && data.extra[sel.value]; if (f) midi.play(f); };
+    $('bgmStop').onclick = () => midi.stop();
+    $<HTMLInputElement>('bgmVol').oninput = (e) => midi.setVolume(+(e.target as HTMLInputElement).value);
+  }
   const list = $('sfxList'), roles = $('sfxRoles'); const n = loaded ? data.sfxCount() : 0;
   if (!n) { list.innerHTML = '<p class="muted">DATA13.DAT를 넣으면 효과음 목록이 나옵니다.</p>'; roles.innerHTML = ''; return; }
   const cur = sfxRoles();
@@ -224,7 +247,8 @@ function buildNatials() {
     html += inp('move', e.move, n.move) + `<td>${ELEMENT[e.element] ?? e.element}</td>` + inp('flag1', e.flag1, n.flag1) + inp('range', e.range, n.range) + inp('spell', e.spell, n.spell) + `<td>${MOVETYPE[e.moveType] ?? e.moveType}</td>` + inp('cost', e.cost, n.cost) + '</tr>';
   }
   host.innerHTML = html + '</table><p class="muted small">스탯1~5의 의미(공/방/마/마방/속도 추정)는 아직 미확인. 각 스탯은 레벨 1·2·3 값.</p>';
-  host.querySelectorAll<HTMLElement>('td.port').forEach((td) => { const c = portrait(+td.dataset.k!); if (c) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.getContext('2d')!.drawImage(c, 0, 0, 48, 48 * c.height / c.width); td.appendChild(t); } });
+  host.querySelectorAll<HTMLElement>('td.port').forEach((td) => { const k = +td.dataset.k!; const c = portrait(k); if (c) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.getContext('2d')!.drawImage(c, 0, 0, 48, 48 * c.height / c.width); td.appendChild(t); }
+    const sp = spriteFrame(NATIAL_SPRITE[k], 0); if (sp) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.style.imageRendering = 'pixelated'; t.getContext('2d')!.drawImage(sp, 0, 48, 48, 48, 0, 0, 48, 48); td.appendChild(t); } });
   host.querySelectorAll<HTMLInputElement>('input').forEach((inp) => inp.onchange = () => {
     const i = +inp.dataset.i!; const base = nats[i]; const e = edits.natials[i] ?? (edits.natials[i] = JSON.parse(JSON.stringify(base)));
     const v = Math.max(0, Math.floor(+inp.value || 0)); const p = inp.dataset.p!.split('.');
@@ -258,5 +282,5 @@ $('btnExportExe').onclick = () => {
 const sfx = new Sfx(() => (loaded ? data : null), sfxRoles);
 $<HTMLInputElement>('sfxOn').onchange = (e) => { sfx.enabled = (e.target as HTMLInputElement).checked; };
 $<HTMLInputElement>('sfxVol').oninput = (e) => { sfx.volume = +(e.target as HTMLInputElement).value; };
-const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name, portrait, sfx });
+const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name, portrait, sfx, sprite: (id, side, frame) => { const e = id === 'master' ? -1 : id.startsWith('n') ? NATIAL_SPRITE[+id.slice(1)] : -1; return e < 0 ? null : spriteFrame(e + side * 2, frame); }, masterSprite: (m, side, frame) => spriteFrame(MASTER_SPRITE(m) + side * 2, frame), bgm: () => { const f = edits.bgm && data.extra[edits.bgm]; if (f) midi.play(f); }, bgmStop: () => midi.stop() });
 loadAll();

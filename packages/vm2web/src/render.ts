@@ -1,24 +1,22 @@
 import { CHUNK_H, CHUNK_W, HEX_W, ODD_OFF, ROW_STEP, TILE_H, type Tileset } from './vm2data';
 
 /** palette entries are R,G,B,flag; pixel value v -> palette[v-17]; 16 = transparent */
-export function atlasCanvas(ts: Tileset): HTMLCanvasElement {
+export function atlasCanvas(ts: Tileset, lut: Uint8Array): HTMLCanvasElement {
   const n = ts.chunks; const c = document.createElement('canvas'); c.width = CHUNK_W; c.height = CHUNK_H * n;
   const g = c.getContext('2d')!; const img = g.createImageData(CHUNK_W, CHUNK_H * n); const px = img.data;
-  const pal = ts.pal; const ncol = pal.length >> 2;
-  for (let i = 0; i < CHUNK_W * CHUNK_H * n; i++) {
-    const v = ts.atlas[i]; const o = i * 4;
-    if (v === 16) continue;
-    const k = v - 17;
-    if (k >= 0 && k < ncol) { px[o] = pal[k * 4]; px[o + 1] = pal[k * 4 + 1]; px[o + 2] = pal[k * 4 + 2]; }
-    else { const gr = Math.min(255, (v - 16) * 2 + 40); px[o] = px[o + 1] = px[o + 2] = gr; }
-    px[o + 3] = 255;
-  }
+  for (let i = 0; i < CHUNK_W * CHUNK_H * n; i++) { const v = ts.atlas[i]; px.set(lut.subarray(v * 4, v * 4 + 4), i * 4); }
+  g.putImageData(img, 0, 0); return c;
+}
+/** indexed 8-bit image -> canvas through a 256-entry RGBA lut */
+export function indexedCanvas(pix: Uint8Array, w: number, h: number, lut: Uint8Array): HTMLCanvasElement {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d')!; const img = g.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) img.data.set(lut.subarray(pix[i] * 4, pix[i] * 4 + 4), i * 4);
   g.putImageData(img, 0, 0); return c;
 }
 
 export class TileRenderer {
   atlas: HTMLCanvasElement; cache = new Map<number, HTMLCanvasElement>();
-  constructor(public ts: Tileset) { this.atlas = atlasCanvas(ts); }
+  constructor(public ts: Tileset, lut: Uint8Array) { this.atlas = atlasCanvas(ts, lut); }
   tile(idx: number): HTMLCanvasElement {
     let c = this.cache.get(idx);
     if (c) return c;

@@ -42,3 +42,22 @@ python3 tools/vm2/vm2.py pack <게임폴더> mod/ built/      # built/DATA10.DAT
 - DATA13: WAV 154개. DATA08: 배경/UI 이미지(8bpp, 768×400 아틀라스 등)+팔레트(68색). DATA00/09: 스프라이트 시트(8bpp, 프레임 테이블 미해독), 24×24 타일 배치표(1152B), 소형 팔레트.
 - 8bpp 이미지는 전역 256색 팔레트에 소형 팔레트를 조립해 쓰므로 정확한 색은 팔레트 배정 로직(미해독)이 필요. 타일셋은 `v-17` → 팔레트 인덱스가 대략 맞는다.
 - 네이티얼 24종의 스탯 테이블은 아직 못 찾음(EXE .data 또는 DATA00 추정).
+
+## Findings from the English build (Vantage Master Online, vmv2.exe 2000-01)
+
+- `DATA00/09/10.DIR` — "LB DIR" tables: 36-byte records `name[12] (8.3 with `._XX` ext), u32 ?, u32 packed size, u32 unpacked size (rounded), u32 time, u32 offset`.
+  Extensions: `_SC` script/header, `_BG` tile atlas, `_PL` palette, `_MP` tiledefs, `_MD` tilemap, `_VM`/`_MV` per-map derived tables,
+  `_CH` character chunk atlas, `_CP` character placement table, `_BM` bitmap, `_FN` font.
+- Global 256-colour palette (vmv2.exe `0x422c32`, SetPaletteEntries(10, 236)): `10-15` SYSPAL[0..5], `16` transparent,
+  `17-59` map palette (BG####P, 43 colours, R,G,B,flag), `60-99` CHRPAL[0..39], `100-127` SYSPAL[12..39], `240-245` SYSPAL[6..11].
+  SYSPAL/CHRPAL are DATA00 entries 1 and 2 (40 colours each). Night mode darkens entries 118-230 ((v-20)/3).
+- Unit sprites (`DATA02`, image/placement pairs): image = 24x12 chunk atlas (288 bytes per chunk, values 16=transparent);
+  placement = 96-byte records of 48 u16 chunk ids (0x7ff = empty). **Two consecutive records form one 6x8 chunk grid**
+  (slot s -> column s>>3, row 7-(s&7), i.e. bottom-up), which is three 48x96 frames side by side. 1152-byte tables = 6 pairs = 18 frames.
+  Entries 0..70: 18 masters x (blue, red). Natials (blue entry; red = +2): see `NATIAL_SPRITE` in `packages/vm2web/src/vm2data.ts`.
+  DATA03 holds the same characters inside summoning circles plus spell effects.
+- Natial portraits (`DATA09` SP400..SP630 + `_P` 63-colour palettes): raw 8-bit, dimensions come from the natial script
+  ED400+k: the record `(entry, 9, 512, 512, x0)` is followed by `(y0, x1, y1, …)`; width = x1-x0, height = y1-y0.
+- Sound: `DATA13` = RIFF/WAVE effects (22 kHz 16-bit mono). BGM = `MIDI/CR0xxGM.MID` (General MIDI).
+- English natial table lives at VA `0x474A30` (same 0x58-byte layout); `vm2web` now finds the table by scanning for 24
+  records whose +0x50/+0x54 point at short strings, so either build works.
