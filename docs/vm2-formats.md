@@ -87,6 +87,15 @@ Sources: 나무위키 밴티지 마스터 택틱스 항목 (user-provided excerp
 - Damage is deterministic. One sample: MAG 10 vs MDEF 5 -> 6, so damage = ATK - DEF + 1 (element +-2, side +1, rear +2,
   height +-1, terrain defence %). More samples needed.
 - `DATA01` decoded: each entry is a plain 384x168 8-bit image (16x14 chunks of 24x12 in row-major order). Rows 0-1 =
-  16 walking frames of 48x56 (8 facings x 2 steps: W, SW, S, SE, E, NE, N, NW), row 2 = 8 death fragments (the unit
-  breaks apart and rises). DATA01 index = DATA02 entry / 2 (186..202 -> 183..191). Units on the map always play the
+  16 walking frames of 48x72 (y 0-71 and 72-143; 8 facings x 2 steps: W, SW, S, SE, E, NE, N, NW), y 144-167 = a strip
+  of 8 death fragments 48x24 (the unit breaks apart and rises). DATA02 facing order is W, NW, NE, E, SE, SW
+  (frames 0-2, 3-5, ... = 9, 11, 1, 3, 5, 7 o'clock). DATA01 index = DATA02 entry / 2 (186..202 -> 183..191). Units on the map always play the
   2-step walk cycle in their facing; DATA02 poses are only used for the attack.
+- `DATA03` uses the same chunk-atlas + placement format as DATA02 (three 96x96 frames per record pair). Entries 0-88
+  (even) are the masters' summon cut-ins (figure + blue magic circle, blue/red variants), 90-144 natial appearance
+  animations (one natial each, not yet mapped), 146-158 tarot-card flips (card back narrowing, then a natial card face,
+  then a sparkle — the natial summon card), 160 a plant growing, 162/170/184 a 18-frame sparkle burst (used by the
+  workbench as the summon effect), 164-182 other spell effects (pyramid, water, ice, fire, light rings).
+- Facing order of the sheets is a visual guess and editable in the sprites tab ("방향 설정"): DATA01 frames default to
+  W x3, NW, N x3, NE x2, E x3, SE x2, S x2 (no SW frames found — nearest direction is used), DATA02 groups W, NW, NE,
+  E, SE, SW.

@@ -39,6 +39,8 @@ export interface Sprite { frames: Uint8Array[]; w: number; h: number }
 /** DATA02 entry (blue team) holding each natial's map sprite; red team = +2. Order was identified visually. */
 export const NATIAL_SPRITE: number[] = [106, 94, 98, 102, 110, 114, 118, 122, 126, 130, 134, 138, 142, 146, 150, 154, 158, 162, 166, 170, 174, 178, 182, 186];
 export const MASTER_SPRITE = (m: number) => (m < 18 ? m * 4 : 72 + (m - 18) * 2);
+/** DATA01 index of the walk sheet for a DATA02 sprite entry (resource table pairs 1:k with 2:2k; 186..202 map to 183..191) */
+export const WALK_ENTRY = (data02Entry: number) => (data02Entry >= 186 ? 183 + (data02Entry - 186) / 2 : data02Entry / 2);
 export interface Natial { index: number; name: string; attack: string; hp: number; stats: number[][]; move: number; element: number; flag1: number; range: number; spell: number; moveType: number; cost: number }
 
 export function parseHeader(raw: Uint8Array): MapHeader {
@@ -114,9 +116,9 @@ export class VM2Data {
    * slot s -> column s>>3 of six, row 7-(s&7) of eight). Two records hold three 96x96 frames, each centred at x=48:
    * frame A = record 0 columns 0-3, frame B = record 1 columns 2-5, frame C = record 0 columns 4-5 + record 1 columns 0-1.
    */
-  sprite(entry: number): Sprite | null {
-    if (!this.entries.DATA02 || !this.entries.DATA02[entry]?.length) return null;
-    const atlas = this.get('DATA02', entry), defs = this.get('DATA02', entry + 1); const n = Math.floor(atlas.length / 288);
+  sprite(entry: number, file = 'DATA02'): Sprite | null {
+    if (!this.entries[file] || !this.entries[file][entry]?.length || !this.entries[file][entry + 1]?.length) return null;
+    const atlas = this.get(file, entry), defs = this.get(file, entry + 1); const n = Math.floor(atlas.length / 288);
     const dv = new DataView(defs.buffer, defs.byteOffset, defs.byteLength); const frames: Uint8Array[] = [];
     const W = 96, H = 96;
     for (let p = 0; p * 192 + 192 <= defs.length; p++) {
@@ -161,6 +163,20 @@ export class VM2Data {
       j++;
     }
     return out;
+  }
+  /**
+   * DATA01 walk sheet: a plain 384x168 8-bit image (16x14 chunks of 24x12, row-major). Two rows of 8 walking frames
+   * of 48x72 (8 facings x 2 steps: W, SW, S, SE, E, NE, N, NW), then a 24px strip of 8 death fragments (48x24).
+   */
+  walk(entry: number): Sprite | null {
+    const e = this.entries.DATA01?.[entry]; if (!e?.length) return null;
+    const x = this.get('DATA01', entry); if (x.length < 224 * 288) return null;
+    const sheet = new Uint8Array(384 * 168);
+    for (let i = 0; i < 224; i++) for (let y = 0; y < 12; y++) sheet.set(x.subarray(i * 288 + y * 24, i * 288 + y * 24 + 24), ((i >> 4) * 12 + y) * 384 + (i & 15) * 24);
+    const frames: Uint8Array[] = [];
+    for (let f = 0; f < 16; f++) { const fr = new Uint8Array(48 * 72); const x0 = (f % 8) * 48, y0 = (f >> 3) * 72; for (let y = 0; y < 72; y++) fr.set(sheet.subarray((y0 + y) * 384 + x0, (y0 + y) * 384 + x0 + 48), y * 48); frames.push(fr); }
+    for (let f = 0; f < 8; f++) { const fr = new Uint8Array(48 * 72).fill(16); const x0 = f * 48; for (let y = 0; y < 24; y++) fr.set(sheet.subarray((144 + y) * 384 + x0, (144 + y) * 384 + x0 + 48), (24 + y) * 48); frames.push(fr); }
+    return { frames, w: 48, h: 72 };
   }
   /** sound effects (DATA13 RIFF/WAVE entries) */
   sfxCount() { return this.entries.DATA13 ? this.entries.DATA13.filter((e) => e.length >= 4 && e[0] === 0x52).length : 0; }

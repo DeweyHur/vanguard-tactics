@@ -67,7 +67,7 @@
         <div class="sec" id="bOrder" title="행동 순서 (OA)"></div>
         <div class="sec" id="bUnit"></div>
         <div id="bSummon"></div>
-        <div class="sec"><div class="row"><button id="bEnd">대기</button><button id="bMagic">마법</button><button id="bFit">맵 맞춤</button><button id="bQuit">그만두기</button></div><div class="muted small">차례인 유닛이 깜빡임 · 클릭: 이동 / 적 클릭: 공격 · 대기로 행동 종료 · 마스터 차례엔 소환 · 우클릭 취소 · 드래그/두 손가락 스크롤 이동 · 핀치(⌘+휠) 줌</div></div>
+        <div class="sec"><div class="row"><button id="bEnd">대기</button><button id="bMagic">마법</button><button id="bFit">맵 맞춤</button><button id="bQuit">그만두기</button></div><div class="muted small">차례인 유닛이 깜빡임 · 클릭: 이동(걸어감) / 적 클릭: 공격 · 대기로 행동 종료 · 마스터 차례엔 소환 · 우클릭 취소 · 드래그/두 손가락 스크롤 이동 · 핀치(⌘+휠) 줌</div></div>
         <pre id="bLog"></pre>
       </aside>
       <div id="bwrap"><canvas id="bmap"></canvas><div id="bhud"></div></div>
@@ -79,9 +79,11 @@
       <h2 style="margin-top:12px">유닛별 공격음 <span class="muted small">(DATA12 애니메이션 스크립트에서 추출 — 배틀에서 공격할 때 원래 타이밍대로 재생)</span></h2><div id="sfxUnits"></div>
       <h2 style="margin-top:12px">효과음 목록</h2><div id="sfxList"></div></div></section>
     <section id="tab-sprites" class="tab hidden"><div class="card wide">
-      <h2>네이티얼 ↔ 스프라이트 매핑 <span class="muted small">(DATA02 — 초상화와 안 맞으면 엔트리 번호를 바꾸세요)</span></h2>
+      <h2>방향 설정 <span class="muted small">(걷기 시트 DATA01 16프레임과 공격 포즈 DATA02 6그룹이 각각 어느 방향인지 — 기본값은 추정)</span></h2>
+      <div id="spriteDirs"></div>
+      <h2 style="margin-top:16px">네이티얼 ↔ 스프라이트 매핑 <span class="muted small">(DATA02 — 초상화와 안 맞으면 엔트리 번호를 바꾸세요)</span></h2>
       <div id="spriteMap"></div>
-      <h2 style="margin-top:16px">DATA02 전체 엔트리 <span class="muted small">(왼쪽 큰 칸 = 18프레임 연속 재생 · 0~70 마스터 · 파란팀은 짝수, 빨간팀은 +2)</span></h2>
+      <h2 style="margin-top:16px">DATA02 전체 엔트리 <span class="muted small">(방향별: 위는 연속 재생, 아래는 구성 프레임 · 0~70 마스터 · 파란팀은 짝수, 빨간팀은 +2 · 방향은 위 "방향 설정"을 따름)</span></h2>
       <div id="spriteAll"></div></div></section>
     <section id="tab-masters" class="tab hidden"><div class="card wide"><h2>적 마스터 38명</h2><div id="masterTable"></div></div></section>
   </main>
