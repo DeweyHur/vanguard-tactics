@@ -15,6 +15,7 @@
       <button data-tab="maps">맵</button>
       <button data-tab="natials">네이티얼</button>
       <button data-tab="masters">마스터</button>
+      <button data-tab="battle">배틀</button>
     </nav>
     <span id="status" class="muted"></span>
     <span class="spacer"></span>
@@ -52,6 +53,22 @@
       </aside>
     </section>
     <section id="tab-natials" class="tab hidden"><div class="card wide"><h2>네이티얼 24종 <span class="muted small">(Vmtv2.exe .data 0x46DE80 — 값을 고치면 "Vmtv2.exe 다운로드"에 반영)</span></h2><div id="natTable"></div></div></section>
+    <section id="tab-battle" class="tab hidden">
+      <aside id="bside">
+        <div class="sec" id="bsetup">
+          <div class="row"><label>맵 <select id="bMap"></select></label></div>
+          <div class="row"><label>나 <select id="bM0"></select></label><label>봇 <select id="bM1"></select></label></div>
+          <div class="row"><button id="bStart">배틀 시작</button></div>
+          <div class="muted small">마스터를 쓰러뜨리면 승리. 마법석 위에 유닛을 두면 턴마다 MP 추가 회복. 규칙 수치는 <code>src/battle/rules.ts</code>.</div>
+        </div>
+        <div class="sec" id="bInfo"></div>
+        <div class="sec" id="bUnit"></div>
+        <div id="bSummon"></div>
+        <div class="sec"><div class="row"><button id="bEnd">턴 종료</button><button id="bQuit">그만두기</button></div><div class="muted small">좌클릭 선택/이동/공격 · 우클릭 취소 · 휠 줌 · 가운데 드래그 스크롤</div></div>
+        <pre id="bLog"></pre>
+      </aside>
+      <div id="bwrap"><canvas id="bmap"></canvas><div id="bhud"></div></div>
+    </section>
     <section id="tab-masters" class="tab hidden"><div class="card wide"><h2>적 마스터 38명</h2><div id="masterTable"></div></div></section>
   </main>
   <script type="module" src="/src/main.ts"></script>

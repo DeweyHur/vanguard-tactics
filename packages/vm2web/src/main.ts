@@ -3,6 +3,7 @@ import { VM2Data, TERRAIN, ELEMENT, MOVETYPE, MAP_COUNT, patchHeader, type MapIn
 import { TileRenderer, drawMap, worldSize, pickCell, cellOrigin, hexPath } from './render';
 import { compressStore, writeArchive } from './lbdat';
 import { putFile, getAll, clearAll, download } from './store';
+import { initBattle } from './battleUi';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = (s: string) => { $('status').textContent = s; };
@@ -43,7 +44,7 @@ async function loadAll() {
   try { data.load(game); loaded = true; renderers.clear(); }
   catch (e) { status(`읽기 실패: ${(e as Error).message}`); return; }
   status(`맵 ${data.maps.length} · 타일셋 ${data.tilesets.size} · 마스터 ${data.masters.length}${data.exe ? ' · EXE 있음' : ' · EXE 없음(스탯 편집 불가)'}`);
-  buildMapList(); buildNatials(); buildMasters(); selectMap(cur);
+  buildMapList(); buildNatials(); buildMasters(); selectMap(cur); battle.populate();
   if (!$('tab-maps').classList.contains('hidden')) fitView();
 }
 
@@ -71,6 +72,7 @@ document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => b.oncl
   document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x === b));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('hidden', t.id !== `tab-${b.dataset.tab}`));
   if (b.dataset.tab === 'maps') fitView();
+  if (b.dataset.tab === 'battle') battle.onShow();
 });
 
 // ---------- map tab ----------
@@ -235,4 +237,5 @@ $('btnExportExe').onclick = () => {
   download('Vmtv2.exe', data.patchedExe(Object.values(edits.natials))); status(`Vmtv2.exe 생성 (수정 네이티얼 ${Object.keys(edits.natials).length}종)`);
 };
 
+const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name });
 loadAll();

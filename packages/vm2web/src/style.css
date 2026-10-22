@@ -10,7 +10,7 @@ button, select, input, textarea { font: inherit; color: var(--fg); background: #
 button { cursor: pointer; } button:hover { border-color: var(--acc); } button:disabled { opacity: .4; cursor: default; }
 textarea { width: 100%; height: 120px; resize: vertical; white-space: pre; }
 main { flex: 1; min-height: 0; display: flex; }
-.tab { flex: 1; display: flex; min-height: 0; overflow: auto; } .tab.hidden { display: none; }
+.tab { flex: 1; display: flex; min-height: 0; overflow: auto; } .hidden { display: none !important; }
 .card { margin: 24px auto; max-width: 720px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px 20px; align-self: flex-start; }
 .card.wide { max-width: 1400px; width: calc(100% - 48px); }
 h2 { margin: 0 0 10px; font-size: 15px; }
@@ -35,3 +35,11 @@ table { border-collapse: collapse; width: 100%; font-size: 12px; }
 th, td { border: 1px solid var(--line); padding: 2px 5px; text-align: right; white-space: nowrap; }
 th { background: #262a34; position: sticky; top: 0; } td:first-child, th:first-child, td.l { text-align: left; }
 td input { width: 56px; padding: 1px 3px; text-align: right; } td input.chg { border-color: #e66; }
+#bside { width: 300px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); min-height: 0; overflow: auto; }
+#bwrap { flex: 1; position: relative; overflow: hidden; background: #0a0b0e; }
+#bmap { position: absolute; left: 0; top: 0; image-rendering: pixelated; cursor: crosshair; }
+#bhud { position: absolute; left: 8px; bottom: 6px; color: var(--acc); font-size: 11px; pointer-events: none; text-shadow: 0 1px 2px #000; }
+#bSummon { padding: 6px 8px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px; }
+#bSummon button { font-size: 11px; padding: 2px 5px; } #bSummon button.sel { background: var(--acc); color: #000; }
+#bLog { margin: 0; padding: 8px; font-size: 11px; color: var(--mut); white-space: pre-wrap; flex: 1; overflow: auto; }
+.e1 { color: #c9a35a; } .e2 { color: #6ab0ff; } .e3 { color: #ff7a5c; } .e4 { color: #b9f; }
