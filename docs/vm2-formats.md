@@ -74,3 +74,15 @@ python3 tools/vm2/vm2.py pack <게임폴더> mod/ built/      # built/DATA10.DAT
   obj 20 = attacker, 22 = defender, 49 = end.
 - DATA01 (64512-byte entries, 224 chunks, one per character, no placement table) is still undecoded — likely the
   larger battle-scene animation set.
+
+## Rules as reconstructed (packages/vm2web/src/battle/rules.ts)
+Sources: 나무위키 밴티지 마스터 택틱스 항목 (user-provided excerpt), gameplay captures.
+- Every unit has 10 HP; the master's HP reaching 0 ends the battle. The info panel's "35/62" style numbers are MP.
+- OA timeline instead of alternating turns: hourglass = minutes until the unit acts again, bell = order. OA grows with
+  speed (smaller), hexes moved, ranged attacks (per hex of range) and magic.
+- MP on the hour: (magic stones + 2) x master MAG - sum of summoned natials' upkeep; negative MP dismisses natials
+  oldest-first. EXE natial field 0 (16/32/48/64/80/88) is treated as upkeep x8, `cost` (400..1600) as summon cost x50.
+- Daylight: day 8:00-15:59, dusk 16-19:59, night 20:00-3:59, dawn 4-7:59. Natial flag byte 1: 1 = day type, 2 = night
+  type (+2 to all stats in their period, -2 in the opposite; the capture showed Guene-Foss 5/5/8/9 at 7:00 and 7/7/10/11 at 11:15).
+- Damage is deterministic. One sample: MAG 10 vs MDEF 5 -> 6, so damage = ATK - DEF + 1 (element +-2, side +1, rear +2,
+  height +-1, terrain defence %). More samples needed.

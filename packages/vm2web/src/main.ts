@@ -276,7 +276,7 @@ function buildSound() {
 function buildNatials() {
   const host = $('natTable'); const nats = data.natials();
   if (!nats.length) { host.innerHTML = '<p class="muted">Vmtv2.exe를 파일 탭에서 넣으면 스탯이 표시됩니다.</p>'; return; }
-  const cols = ['#', '', '이름', '공격명', 'HP', ...STAT.flatMap((s) => [`${s}·L1`, `${s}·L2`, `${s}·L3`]), '이동', '속성', 'flag1', '사정', '마법', '이동형', 'MP'];
+  const cols = ['#', '', '이름', '공격명', '유지×8', ...STAT.flatMap((s) => [`${s}·L1`, `${s}·L2`, `${s}·L3`]), '이동', '속성', 'flag1', '사정', '마법', '이동형', 'MP'];
   let html = `<table><tr>${cols.map((c) => `<th>${c}</th>`).join('')}</tr>`;
   for (const n of nats) {
     const e = edits.natials[n.index] ?? n;

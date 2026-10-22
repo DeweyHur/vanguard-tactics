@@ -61,12 +61,13 @@
           <div class="row"><label>맵 <select id="bMap"></select></label></div>
           <div class="row"><label>나 <select id="bM0"></select></label><label>봇 <select id="bM1"></select></label></div>
           <div class="row"><button id="bStart">배틀 시작</button></div>
-          <div class="muted small">마스터를 쓰러뜨리면 승리. 마법석 위에 유닛을 두면 턴마다 MP 추가 회복. 규칙 수치는 <code>src/battle/rules.ts</code>.</div>
+          <div class="muted small">원작 룰: 전 유닛 HP 10 · 속도/행동 크기에 따른 OA 시간제 턴 · 매 정각 MP 회복 = (마법석+2)×마스터 마력 − 유지MP · 낮/밤 보정 · 측·후면 공격 보너스 · 난수 없음. 수치는 <code>src/battle/rules.ts</code>.</div>
         </div>
         <div class="sec" id="bInfo"></div>
+        <div class="sec" id="bOrder" title="행동 순서 (OA)"></div>
         <div class="sec" id="bUnit"></div>
         <div id="bSummon"></div>
-        <div class="sec"><div class="row"><button id="bEnd">턴 종료</button><button id="bFit">맵 맞춤</button><button id="bQuit">그만두기</button></div><div class="muted small">클릭 선택/이동/공격 · 우클릭 취소 · 드래그/두 손가락 스크롤 이동 · 핀치(⌘+휠) 줌</div></div>
+        <div class="sec"><div class="row"><button id="bEnd">대기</button><button id="bMagic">마법</button><button id="bFit">맵 맞춤</button><button id="bQuit">그만두기</button></div><div class="muted small">차례인 유닛이 깜빡임 · 클릭: 이동 / 적 클릭: 공격 · 대기로 행동 종료 · 마스터 차례엔 소환 · 우클릭 취소 · 드래그/두 손가락 스크롤 이동 · 핀치(⌘+휠) 줌</div></div>
         <pre id="bLog"></pre>
       </aside>
       <div id="bwrap"><canvas id="bmap"></canvas><div id="bhud"></div></div>
