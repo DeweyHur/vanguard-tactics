@@ -68,3 +68,9 @@ python3 tools/vm2/vm2.py pack <게임폴더> mod/ built/      # built/DATA10.DAT
   `48` waits one tick, `52 <slot>` plays the slot, `34/31/22/20` move/frame ops with signed args. Scripts 0..17 are the
   masters' attacks (sounds 82..109), 27+k is natial k's attack (sounds 0..75), 65..70 big effects (76..81).
   System SE table in vmv2.exe at `0x47446c` maps 14 UI sounds to DATA13 137..153 (SE1 = 138 is the common click).
+- DATA02 frame order: 18 frames = 6 facings x 3 poses (idle, attack wind-up, attack hit); frame = facing*3 + pose.
+  Facing order as stored appears to be W, SW, SE, E, NE, NW (to be confirmed in play). DATA12 attack scripts drive
+  these poses: `<obj> 26/27` = pose, `<obj> 31 ±n` = frame step, `<obj> 34 dx` = x offset, `45 n`/`44` = hit flash,
+  obj 20 = attacker, 22 = defender, 49 = end.
+- DATA01 (64512-byte entries, 224 chunks, one per character, no placement table) is still undecoded — likely the
+  larger battle-scene animation set.

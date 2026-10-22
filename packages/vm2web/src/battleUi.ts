@@ -16,6 +16,25 @@ export function initBattle(deps: BattleDeps) {
   const cam = { x: 0, y: 0, z: 2 };
   let b: Battle | null = null, ts: Tileset | null = null, grid: Uint16Array | null = null, rend: TileRenderer | null = null;
   let sel: Unit | null = null, summonIdx = -1, hover: Cell | null = null, busy = false; let masterIdx: [number, number] = [0, 1];
+  // facing (0..5 = frame group) and a short attack animation per unit
+  const facing = new Map<number, number>(); const attackAnim = new Map<number, { t0: number; dx: number; dy: number }>();
+  /** hex direction from a -> b as a frame group: 0 W, 1 SW, 2 SE, 3 E, 4 NE, 5 NW (order as stored in DATA02) */
+  function dirOf(a: Cell, b: Cell): number {
+    const ax = a.c + (a.r & 1) * 0.5, bx = b.c + (b.r & 1) * 0.5; const dx = bx - ax, dy = b.r - a.r;
+    if (dy === 0) return dx < 0 ? 0 : 3;
+    if (dy > 0) return dx < 0 ? 1 : 2; return dx < 0 ? 5 : 4;
+  }
+  function frameOf(u: Unit): number {
+    const dir = facing.get(u.uid) ?? (u.side === 0 ? 2 : 5); const an = attackAnim.get(u.uid);
+    if (!an) return dir * 3;
+    const age = performance.now() - an.t0; if (age > 700) { attackAnim.delete(u.uid); return dir * 3; }
+    return dir * 3 + (age < 250 ? 1 : 2);
+  }
+  function animOffset(u: Unit): { x: number; y: number } {
+    const an = attackAnim.get(u.uid); if (!an) return { x: 0, y: 0 }; const age = performance.now() - an.t0; const k = age < 250 ? age / 250 : age < 500 ? 1 : Math.max(0, 1 - (age - 500) / 200);
+    return { x: an.dx * 10 * k, y: an.dy * 6 * k };
+  }
+  let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { if (!attackAnim.size) { clearInterval(animTimer); return; } draw(); }, 50); };
 
   const toUnitDef = (n: Natial): UnitDef => ({ id: `n${n.index}`, name: n.name, hp: n.hp, stats: n.stats, move: n.move, element: n.element, range: Math.max(1, n.range), moveType: Math.min(4, n.moveType), cost: n.cost });
 
@@ -52,6 +71,7 @@ export function initBattle(deps: BattleDeps) {
   $('bEnd').onclick = async () => {
     if (!b || busy || b.s.winner >= 0) return; sel = null; summonIdx = -1; b.endTurn(); deps.sfx.role('turn'); refresh(); draw();
     busy = true; await new Promise((r) => setTimeout(r, 300)); const n0 = b.s.log.length; if (b.s.side === 1 && b.s.winner < 0) botTurn(b); busy = false;
+    for (const u of b.s.units) if (u.hp > 0 && u.side === 1) { let best: Unit | null = null, bd = 1e9; for (const o of b.s.units) if (o.hp > 0 && o.side === 0) { const d = Math.hypot(o.r - u.r, o.c - u.c); if (d < bd) { bd = d; best = o; } } if (best) facing.set(u.uid, dirOf(u, best)); }
     const added = b.s.log.slice(n0); if (added.some((l) => l.includes('격파'))) deps.sfx.role('kill'); else if (added.some((l) => l.includes('피해'))) deps.sfx.role('attack'); else if (added.some((l) => l.includes('소환'))) deps.sfx.role('summon');
     refresh(); draw();
   };
@@ -75,7 +95,8 @@ export function initBattle(deps: BattleDeps) {
     const units = b.s.units.filter((u) => u.hp > 0).sort((x, y) => x.r - y.r || x.c - y.c);
     for (const u of units) {
       const p = center(u.r, u.c);
-      const sp = u.def.master ? deps.masterSprite(masterIdx[u.side], u.side, 0) : deps.sprite(u.def.id, u.side, 0);
+      const fr = frameOf(u); const off = animOffset(u); p.x += off.x; p.y += off.y;
+      const sp = u.def.master ? deps.masterSprite(masterIdx[u.side], u.side, fr) : deps.sprite(u.def.id, u.side, fr);
       if (sp) {
         g.beginPath(); g.ellipse(p.x, p.y + 4, 16, 8, 0, 0, Math.PI * 2); g.fillStyle = u === sel ? 'rgba(255,255,255,.55)' : u.side === 0 ? 'rgba(60,120,255,.45)' : 'rgba(255,70,70,.45)'; g.fill();
         g.drawImage(sp, p.x - 48, p.y + 8 - (+(sp.dataset.bottom ?? 90)));
@@ -131,8 +152,8 @@ export function initBattle(deps: BattleDeps) {
     const u = b.unitAt(cell.r, cell.c); let err: string | null = null;
     const n0 = b.s.log.length;
     if (summonIdx >= 0) { err = b.summon(summonIdx, cell.r, cell.c); if (!err) { summonIdx = -1; deps.sfx.role('summon'); } }
-    else if (sel && u && u.side !== 0 && !sel.acted && b.targetsFrom(sel, sel.r, sel.c).includes(u)) { const atk = sel; err = b.attack(sel.uid, u.uid); if (!err) { const killed = b.s.log.slice(n0).some((l) => l.includes('격파')); if (!deps.sfx.attack(atk.def.id, masterIdx[0])) deps.sfx.role('attack'); if (killed) setTimeout(() => deps.sfx.role('kill'), 600); } if (sel.hp <= 0) sel = null; }
-    else if (sel && !u && !sel.moved && b.reachable(sel).has(key(cell.r, cell.c))) err = b.move(sel.uid, cell.r, cell.c);
+    else if (sel && u && u.side !== 0 && !sel.acted && b.targetsFrom(sel, sel.r, sel.c).includes(u)) { const atk = sel; err = b.attack(sel.uid, u.uid); if (!err) { facing.set(atk.uid, dirOf(atk, u)); facing.set(u.uid, dirOf(u, atk)); const ax = atk.c + (atk.r & 1) * 0.5, ux = u.c + (u.r & 1) * 0.5; attackAnim.set(atk.uid, { t0: performance.now(), dx: Math.sign(ux - ax), dy: Math.sign(u.r - atk.r) }); kickAnim(); const killed = b.s.log.slice(n0).some((l) => l.includes('격파')); if (!deps.sfx.attack(atk.def.id, masterIdx[0])) deps.sfx.role('attack'); if (killed) setTimeout(() => deps.sfx.role('kill'), 600); } if (sel.hp <= 0) sel = null; }
+    else if (sel && !u && !sel.moved && b.reachable(sel).has(key(cell.r, cell.c))) { const from = { r: sel.r, c: sel.c }; err = b.move(sel.uid, cell.r, cell.c); if (!err) facing.set(sel.uid, dirOf(from, cell)); }
     else if (u && u.side === 0) { sel = u; deps.sfx.role('select'); if (!u.moved && b.reachable(u).size <= 1) b.log(`! ${u.def.name}: 갈 수 있는 칸이 없음`); }
     else sel = null;
     if (err) b.log(`! ${err}`);
