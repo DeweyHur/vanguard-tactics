@@ -14,7 +14,7 @@ const status = (s: string) => { $('status').textContent = s; };
 
 // ---------- edit state (persisted in IndexedDB as __edits.json) ----------
 interface MapEdit { srcIndex: number; name: string; desc: string; desc2: string; grid: number[] }
-interface Edits { maps: Record<number, MapEdit>; natials: Record<number, Natial>; sfx?: Record<SfxRole, number>; bgm?: string }
+interface Edits { maps: Record<number, MapEdit>; natials: Record<number, Natial>; sfx?: Record<SfxRole, number>; bgm?: string; spriteMap?: Record<number, number> }
 let edits: Edits = { maps: {}, natials: {} };
 const sfxRoles = () => ({ ...DEFAULT_SFX, ...(edits.sfx ?? {}) });
 let saveTimer = 0;
@@ -25,7 +25,7 @@ function saveEdits() {
 
 // ---------- data ----------
 const data = new VM2Data();
-let loaded = false;
+let loaded = false; let spritesBuilt = false;
 const renderers = new Map<string, TileRenderer>();
 const rendererFor = (m: MapInfo) => { const ts = headerBase(m) === m.header ? m.tileset : data.maps[edits.maps[m.index].srcIndex].tileset; let r = renderers.get(ts.key); if (!r) { r = new TileRenderer(ts, data.palette(ts.pal)); renderers.set(ts.key, r); } return r; };
 const headerBase = (m: MapInfo): MapHeader => { const e = edits.maps[m.index]; return e && e.srcIndex !== m.index ? data.maps[e.srcIndex].header : m.header; };
@@ -49,7 +49,7 @@ async function loadAll() {
   try { data.load(game); loaded = true; renderers.clear(); }
   catch (e) { status(`읽기 실패: ${(e as Error).message}`); return; }
   status(`맵 ${data.maps.length} · 타일셋 ${data.tilesets.size} · 마스터 ${data.masters.length}${data.exe ? ' · EXE 있음' : ' · EXE 없음(스탯 편집 불가)'}${data.has('DATA02') ? ' · 스프라이트' : ''}${Object.keys(data.extra).length ? ` · MIDI ${Object.keys(data.extra).length}` : ''}`);
-  buildMapList(); buildNatials(); buildMasters(); buildSound(); selectMap(cur); battle.populate(); sfx.reset(); portraitCache.clear(); spriteCache.clear();
+  buildMapList(); buildNatials(); buildMasters(); buildSound(); selectMap(cur); battle.populate(); sfx.reset(); portraitCache.clear(); spriteCache.clear(); spritesBuilt = false;
   if (!$('tab-maps').classList.contains('hidden')) fitView();
 }
 
@@ -78,6 +78,7 @@ document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => b.oncl
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('hidden', t.id !== `tab-${b.dataset.tab}`));
   if (b.dataset.tab === 'maps') fitView();
   if (b.dataset.tab === 'battle') battle.onShow();
+  if (b.dataset.tab === 'sprites' && !spritesBuilt) { buildSprites(); spritesBuilt = true; }
 });
 
 // ---------- map tab ----------
@@ -201,17 +202,40 @@ $('btnCopySlot').onclick = () => {
 const STAT = ['스탯1', '스탯2', '스탯3', '스탯4', '스탯5'];
 const portraitCache = new Map<number, HTMLCanvasElement | null>();
 const spriteCache = new Map<string, HTMLCanvasElement | null>();
-/** 48x96 canvas of one frame of a DATA02 sprite entry; dataset.bottom = last opaque row (feet) */
+/** 96x96 canvas of one frame of a DATA02 sprite entry (centred at x=48); dataset.bottom = last opaque row (feet) */
 function spriteFrame(entry: number, frame: number): HTMLCanvasElement | null {
   const k = `${entry}:${frame}`;
   if (!spriteCache.has(k)) {
     const sp = loaded ? data.sprite(entry) : null; const fr = sp?.frames[frame]; let c: HTMLCanvasElement | null = null;
-    if (fr) { c = indexedCanvas(fr, 48, 96, data.palette()); let bottom = 95; while (bottom > 0 && !fr.subarray(bottom * 48, bottom * 48 + 48).some((v) => v !== 16)) bottom--; c.dataset.bottom = `${bottom}`; }
+    if (fr) { c = indexedCanvas(fr, sp!.w, sp!.h, data.palette()); let bottom = sp!.h - 1; while (bottom > 0 && !fr.subarray(bottom * sp!.w, bottom * sp!.w + sp!.w).some((v) => v !== 16)) bottom--; c.dataset.bottom = `${bottom}`; }
     spriteCache.set(k, c);
   }
   return spriteCache.get(k) ?? null;
 }
 const midi = new MidiPlayer();
+const spriteEntryFor = (k: number) => edits.spriteMap?.[k] ?? NATIAL_SPRITE[k];
+function stripOf(entry: number, frames: number[], scale = 1): HTMLElement {
+  const box = document.createElement('div'); box.className = 'strip';
+  for (const f of frames) { const c = spriteFrame(entry, f); if (!c) continue; const t = document.createElement('canvas'); t.width = 96 * scale; t.height = 96 * scale; t.title = `#${entry} frame ${f}`; const g = t.getContext('2d')!; g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, t.width, t.height); box.appendChild(t); }
+  return box;
+}
+function buildSprites() {
+  const mapEl = $('spriteMap'), allEl = $('spriteAll'); mapEl.innerHTML = ''; allEl.innerHTML = '';
+  if (!loaded || !data.has('DATA02')) { mapEl.innerHTML = '<p class="muted">DATA00.DAT + DATA02.DAT를 넣으면 스프라이트가 나옵니다.</p>'; return; }
+  const entries: number[] = []; data.entries.DATA02.forEach((e, i) => { if (i % 2 === 0 && e.length && data.entries.DATA02[i + 1]?.length) entries.push(i); });
+  const nats = data.natials();
+  const tbl = document.createElement('table'); tbl.innerHTML = '<tr><th>#</th><th>초상화</th><th>이름</th><th>엔트리</th><th>파란팀 프레임 0~5</th></tr>';
+  for (let k = 0; k < 24; k++) {
+    const tr = document.createElement('tr'); const cur = spriteEntryFor(k);
+    tr.innerHTML = `<td>${k}</td><td class="port"></td><td class="l">${nats[k]?.name ?? ''}</td><td><select>${entries.map((e) => `<option value="${e}" ${e === cur ? 'selected' : ''}>${e}</option>`).join('')}</select></td><td class="l strip-cell"></td>`;
+    const pc = portrait(k); if (pc) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.getContext('2d')!.drawImage(pc, 0, 0, 48, 48 * pc.height / pc.width); tr.querySelector('.port')!.appendChild(t); }
+    const cell = tr.querySelector('.strip-cell')!; cell.appendChild(stripOf(cur, [0, 1, 2, 3, 4, 5]));
+    tr.querySelector('select')!.onchange = (ev) => { const v = +(ev.target as HTMLSelectElement).value; edits.spriteMap = { ...(edits.spriteMap ?? {}), [k]: v }; saveEdits(); cell.innerHTML = ''; cell.appendChild(stripOf(v, [0, 1, 2, 3, 4, 5])); };
+    tbl.appendChild(tr);
+  }
+  mapEl.appendChild(tbl);
+  for (const e of entries) { const row = document.createElement('div'); row.className = 'sprow'; const lab = document.createElement('div'); lab.className = 'muted small'; lab.textContent = `#${e}` + (e < 72 ? ` (마스터 ${Math.floor(e / 4)}${e % 4 ? ' 빨강' : ' 파랑'})` : ''); row.appendChild(lab); row.appendChild(stripOf(e, Array.from({ length: 18 }, (_, i) => i))); allEl.appendChild(row); }
+}
 function midFiles(): string[] { return loaded ? Object.keys(data.extra).filter((n) => n.endsWith('.MID')).sort() : []; }
 function portrait(k: number): HTMLCanvasElement | null {
   if (!portraitCache.has(k)) { const p = loaded ? data.portrait(k) : null; portraitCache.set(k, p ? portraitCanvas(p) : null); }
@@ -248,7 +272,7 @@ function buildNatials() {
   }
   host.innerHTML = html + '</table><p class="muted small">스탯1~5의 의미(공/방/마/마방/속도 추정)는 아직 미확인. 각 스탯은 레벨 1·2·3 값.</p>';
   host.querySelectorAll<HTMLElement>('td.port').forEach((td) => { const k = +td.dataset.k!; const c = portrait(k); if (c) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.getContext('2d')!.drawImage(c, 0, 0, 48, 48 * c.height / c.width); td.appendChild(t); }
-    const sp = spriteFrame(NATIAL_SPRITE[k], 0); if (sp) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.style.imageRendering = 'pixelated'; t.getContext('2d')!.drawImage(sp, 0, 48, 48, 48, 0, 0, 48, 48); td.appendChild(t); } });
+    const sp = spriteFrame(spriteEntryFor(k), 0); if (sp) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.style.imageRendering = 'pixelated'; t.getContext('2d')!.drawImage(sp, 24, 40, 48, 48, 0, 0, 48, 48); td.appendChild(t); } });
   host.querySelectorAll<HTMLInputElement>('input').forEach((inp) => inp.onchange = () => {
     const i = +inp.dataset.i!; const base = nats[i]; const e = edits.natials[i] ?? (edits.natials[i] = JSON.parse(JSON.stringify(base)));
     const v = Math.max(0, Math.floor(+inp.value || 0)); const p = inp.dataset.p!.split('.');
@@ -282,5 +306,5 @@ $('btnExportExe').onclick = () => {
 const sfx = new Sfx(() => (loaded ? data : null), sfxRoles);
 $<HTMLInputElement>('sfxOn').onchange = (e) => { sfx.enabled = (e.target as HTMLInputElement).checked; };
 $<HTMLInputElement>('sfxVol').oninput = (e) => { sfx.volume = +(e.target as HTMLInputElement).value; };
-const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name, portrait, sfx, sprite: (id, side, frame) => { const e = id === 'master' ? -1 : id.startsWith('n') ? NATIAL_SPRITE[+id.slice(1)] : -1; return e < 0 ? null : spriteFrame(e + side * 2, frame); }, masterSprite: (m, side, frame) => spriteFrame(MASTER_SPRITE(m) + side * 2, frame), bgm: () => { const f = edits.bgm && data.extra[edits.bgm]; if (f) midi.play(f); }, bgmStop: () => midi.stop() });
+const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name, portrait, sfx, sprite: (id, side, frame) => { const e = id === 'master' ? -1 : id.startsWith('n') ? spriteEntryFor(+id.slice(1)) : -1; return e < 0 ? null : spriteFrame(e + side * 2, frame); }, masterSprite: (m, side, frame) => spriteFrame(MASTER_SPRITE(m) + side * 2, frame), bgm: () => { const f = edits.bgm && data.extra[edits.bgm]; if (f) midi.play(f); }, bgmStop: () => midi.stop() });
 loadAll();

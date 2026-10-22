@@ -78,7 +78,7 @@ export function initBattle(deps: BattleDeps) {
       const sp = u.def.master ? deps.masterSprite(masterIdx[u.side], u.side, 0) : deps.sprite(u.def.id, u.side, 0);
       if (sp) {
         g.beginPath(); g.ellipse(p.x, p.y + 4, 16, 8, 0, 0, Math.PI * 2); g.fillStyle = u === sel ? 'rgba(255,255,255,.55)' : u.side === 0 ? 'rgba(60,120,255,.45)' : 'rgba(255,70,70,.45)'; g.fill();
-        g.drawImage(sp, p.x - 24, p.y + 8 - (+(sp.dataset.bottom ?? 90)));
+        g.drawImage(sp, p.x - 48, p.y + 8 - (+(sp.dataset.bottom ?? 90)));
         if (u.def.master) { g.lineWidth = 2; g.strokeStyle = '#ffd24a'; g.beginPath(); g.ellipse(p.x, p.y + 4, 17, 9, 0, 0, Math.PI * 2); g.stroke(); }
       } else {
         g.beginPath(); g.arc(p.x, p.y, u.def.master ? 13 : 11, 0, Math.PI * 2); g.fillStyle = u.side === 0 ? '#2a6fd6' : '#d63a3a'; g.fill();

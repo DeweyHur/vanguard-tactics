@@ -52,8 +52,11 @@ python3 tools/vm2/vm2.py pack <게임폴더> mod/ built/      # built/DATA10.DAT
   `17-59` map palette (BG####P, 43 colours, R,G,B,flag), `60-99` CHRPAL[0..39], `100-127` SYSPAL[12..39], `240-245` SYSPAL[6..11].
   SYSPAL/CHRPAL are DATA00 entries 1 and 2 (40 colours each). Night mode darkens entries 118-230 ((v-20)/3).
 - Unit sprites (`DATA02`, image/placement pairs): image = 24x12 chunk atlas (288 bytes per chunk, values 16=transparent);
-  placement = 96-byte records of 48 u16 chunk ids (0x7ff = empty). **Two consecutive records form one 6x8 chunk grid**
-  (slot s -> column s>>3, row 7-(s&7), i.e. bottom-up), which is three 48x96 frames side by side. 1152-byte tables = 6 pairs = 18 frames.
+  placement = 96-byte records of 48 u16 chunk ids (0x7ff = empty; slot s -> column s>>3 of six, row 7-(s&7), bottom-up).
+  **Two consecutive records hold three 96x96 frames, each centred at x=48**: frame A = record 0 columns 0-3,
+  frame B = record 1 columns 2-5, frame C = record 0 columns 4-5 followed by record 1 columns 0-1 (the wide frames
+  overlap in column space, which is why they are split across the two records). 1152-byte tables = 6 pairs = 18 frames;
+  frame 0 is the idle pose, several frames are attack/effect overlays.
   Entries 0..70: 18 masters x (blue, red). Natials (blue entry; red = +2): see `NATIAL_SPRITE` in `packages/vm2web/src/vm2data.ts`.
   DATA03 holds the same characters inside summoning circles plus spell effects.
 - Natial portraits (`DATA09` SP400..SP630 + `_P` 63-colour palettes): raw 8-bit, dimensions come from the natial script

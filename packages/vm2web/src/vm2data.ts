@@ -109,21 +109,28 @@ export class VM2Data {
     if (mapPal) put(17, mapPal, 0, mapPal.length >> 2);
     return lut;
   }
-  /** map sprite from DATA02: 24x12 chunk atlas + placement table; every record pair is a 6x8 chunk grid = three 48x48 frames */
+  /**
+   * Map sprite from DATA02: 24x12 chunk atlas + placement table of 96-byte records (48 u16 chunk ids, 0x7ff = empty;
+   * slot s -> column s>>3 of six, row 7-(s&7) of eight). Two records hold three 96x96 frames, each centred at x=48:
+   * frame A = record 0 columns 0-3, frame B = record 1 columns 2-5, frame C = record 0 columns 4-5 + record 1 columns 0-1.
+   */
   sprite(entry: number): Sprite | null {
     if (!this.entries.DATA02 || !this.entries.DATA02[entry]?.length) return null;
     const atlas = this.get('DATA02', entry), defs = this.get('DATA02', entry + 1); const n = Math.floor(atlas.length / 288);
     const dv = new DataView(defs.buffer, defs.byteOffset, defs.byteLength); const frames: Uint8Array[] = [];
+    const W = 96, H = 96;
     for (let p = 0; p * 192 + 192 <= defs.length; p++) {
-      const grid = new Uint8Array(144 * 96).fill(16);
+      const F = [0, 1, 2].map(() => new Uint8Array(W * H).fill(16));
       for (let rec = 0; rec < 2; rec++) for (let s = 0; s < 48; s++) {
         const i = dv.getUint16((p * 2 + rec) * 96 + s * 2, true); if (i === 0x7ff || i >= n) continue;
-        const cx = (((s >> 3) + 5) % 6) * 24, cy = (7 - (s & 7)) * 12; // slot column 0 is the right half of the third frame
-        for (let y = 0; y < 12; y++) grid.set(atlas.subarray(i * 288 + y * 24, i * 288 + y * 24 + 24), (cy + y) * 144 + cx);
+        const c = s >> 3, cy = (7 - (s & 7)) * 12; let f: number, cx: number;
+        if (rec === 0) { if (c < 4) { f = 0; cx = c * 24; } else { f = 2; cx = (c - 4) * 24; } }
+        else if (c >= 2) { f = 1; cx = (c - 2) * 24; } else { f = 2; cx = (c + 2) * 24; }
+        for (let y = 0; y < 12; y++) F[f].set(atlas.subarray(i * 288 + y * 24, i * 288 + y * 24 + 24), (cy + y) * W + cx);
       }
-      for (let f = 0; f < 3; f++) { const fr = new Uint8Array(48 * 96); for (let y = 0; y < 96; y++) fr.set(grid.subarray(y * 144 + f * 48, y * 144 + f * 48 + 48), y * 48); frames.push(fr); }
+      frames.push(...F);
     }
-    return { frames, w: 48, h: 96 };
+    return { frames, w: W, h: H };
   }
   /** natial portrait k (0..23) from DATA09: script entry 27+k names the image entry and its crop box */
   portrait(k: number): Portrait | null {
