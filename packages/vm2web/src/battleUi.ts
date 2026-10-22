@@ -155,6 +155,10 @@ export function initBattle(deps: BattleDeps) {
     for (const t of tg) fillHex(t.r, t.c, magicMode ? 'rgba(120,255,160,.45)' : 'rgba(255,60,60,.45)');
     for (const p of sc) fillHex(p.r, p.c, 'rgba(80,255,120,.4)');
     const act = active();
+    // the acting unit's tile: pulsing fill and outline in its side's colour
+    if (act && b.s.winner < 0 && !walkAnim.has(act.uid)) { const p = center(act.r, act.c); const pulse = 0.5 + 0.5 * Math.sin(now() / 220); const mine0 = act.side === 0;
+      hexPath(g, p.x, p.y); g.fillStyle = mine0 ? `rgba(255,220,80,${0.25 + 0.25 * pulse})` : `rgba(255,90,90,${0.25 + 0.25 * pulse})`; g.fill();
+      hexPath(g, p.x, p.y); g.lineWidth = 2 + pulse; g.strokeStyle = mine0 ? '#ffd24a' : '#ff6b6b'; g.stroke(); }
     const t = now();
     /** where a unit is drawn right now: walking along its path, or at its cell */
     const posOf = (u: Unit): { p: { x: number; y: number }; facing: number; walking: boolean; r: number } => {
