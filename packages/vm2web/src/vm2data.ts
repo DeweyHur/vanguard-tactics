@@ -34,6 +34,7 @@ export interface TileDef { left: number[]; right: number[]; base: number; height
 export interface Tileset { key: string; imgEntry: number; palEntry: number; defEntry: number; atlas: Uint8Array; chunks: number; pal: Uint8Array; defs: TileDef[] }
 export interface MapInfo { index: number; header: MapHeader; tileset: Tileset; tilemapEntry: number; grid: Uint16Array }
 export interface Master { index: number; name: string; cls: number; desc: string }
+export interface Portrait { w: number; h: number; pixels: Uint8Array; pal: Uint8Array }
 export interface Natial { index: number; name: string; attack: string; hp: number; stats: number[][]; move: number; element: number; flag1: number; range: number; spell: number; moveType: number; cost: number }
 
 export function parseHeader(raw: Uint8Array): MapHeader {
@@ -63,11 +64,14 @@ export class VM2Data {
   maps: MapInfo[] = [];
   masters: Master[] = [];
   exe: Uint8Array | null = null;
+  extra: Record<string, Uint8Array> = {};
 
   load(files: Record<string, Uint8Array>) {
     for (const [name, buf] of Object.entries(files)) {
-      if (name.toUpperCase().endsWith('.EXE')) { this.exe = buf; continue; }
-      this.entries[name.toUpperCase().replace('.DAT', '')] = readArchive(buf);
+      const up = name.toUpperCase();
+      if (up.endsWith('.EXE')) { this.exe = buf; continue; }
+      if (!/^DATA\d\d\.DAT$/.test(up)) { this.extra[up] = buf; continue; }
+      this.entries[up.replace('.DAT', '')] = readArchive(buf);
     }
     if (!this.entries.DATA10) throw new Error('DATA10.DAT가 필요합니다');
     this.maps = []; this.masters = []; this.tilesets.clear(); this.dec.clear();
@@ -87,6 +91,23 @@ export class VM2Data {
       this.masters.push({ index: i, name: cstr(d, 0, 20), cls: d[20], desc: cstr(d, 28) });
     }
   }
+  has(file: string) { return !!this.entries[file]; }
+  /** natial portrait k (0..23) from DATA09: script entry 27+k names the image entry and its crop box */
+  portrait(k: number): Portrait | null {
+    if (!this.entries.DATA09) return null;
+    const sc = this.get('DATA09', 27 + k); const dv = new DataView(sc.buffer, sc.byteOffset, sc.byteLength);
+    for (let j = 0; j + 28 <= sc.length; j += 4) {
+      const e = dv.getUint16(j, true), f = dv.getUint16(j + 2, true);
+      if (f !== 9 || e < 71 || e > 117 || !(e & 1)) continue;
+      const x0 = dv.getUint32(j + 12, true), y0 = dv.getUint32(j + 16, true), x1 = dv.getUint32(j + 20, true), y1 = dv.getUint32(j + 24, true);
+      const w = x1 - x0, h = y1 - y0; const pixels = this.get('DATA09', e);
+      if (w > 0 && h > 0 && w * h === pixels.length) return { w, h, pixels, pal: this.get('DATA09', e + 1) };
+    }
+    return null;
+  }
+  /** sound effects (DATA13 RIFF/WAVE entries) */
+  sfxCount() { return this.entries.DATA13 ? this.entries.DATA13.filter((e) => e.length >= 4 && e[0] === 0x52).length : 0; }
+  sfx(i: number): Uint8Array | null { const e = this.entries.DATA13?.[i]; if (!e || e.length < 12 || e[0] !== 0x52) return null; const dv = new DataView(e.buffer, e.byteOffset); return e.subarray(0, Math.min(e.length, dv.getUint32(4, true) + 8)); }
   get(file: string, i: number): Uint8Array {
     const k = `${file}:${i}`; let d = this.dec.get(k);
     if (!d) { d = decompress(this.entries[file][i]); this.dec.set(k, d); }

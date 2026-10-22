@@ -197,7 +197,7 @@ def tileset_of(ents, mapidx):
 
 
 def palette_rgba(pal):
-    cols = [(pal[i + 2], pal[i + 1], pal[i]) for i in range(0, len(pal), 4)]
+    cols = [(pal[i], pal[i + 1], pal[i + 2]) for i in range(0, len(pal), 4)]  # R,G,B,flag
     lut = [(0, 0, 0, 0)] * 256
     for v in range(17, 256):
         i = v - 17

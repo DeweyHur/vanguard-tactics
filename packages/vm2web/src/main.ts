@@ -4,14 +4,17 @@ import { TileRenderer, drawMap, worldSize, pickCell, cellOrigin, hexPath } from 
 import { compressStore, writeArchive } from './lbdat';
 import { putFile, getAll, clearAll, download } from './store';
 import { initBattle } from './battleUi';
+import { Sfx, SFX_ROLES, DEFAULT_SFX, type SfxRole } from './sound';
+import { portraitCanvas } from './render';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = (s: string) => { $('status').textContent = s; };
 
 // ---------- edit state (persisted in IndexedDB as __edits.json) ----------
 interface MapEdit { srcIndex: number; name: string; desc: string; desc2: string; grid: number[] }
-interface Edits { maps: Record<number, MapEdit>; natials: Record<number, Natial> }
+interface Edits { maps: Record<number, MapEdit>; natials: Record<number, Natial>; sfx?: Record<SfxRole, number> }
 let edits: Edits = { maps: {}, natials: {} };
+const sfxRoles = () => ({ ...DEFAULT_SFX, ...(edits.sfx ?? {}) });
 let saveTimer = 0;
 function saveEdits() {
   clearTimeout(saveTimer);
@@ -44,7 +47,7 @@ async function loadAll() {
   try { data.load(game); loaded = true; renderers.clear(); }
   catch (e) { status(`읽기 실패: ${(e as Error).message}`); return; }
   status(`맵 ${data.maps.length} · 타일셋 ${data.tilesets.size} · 마스터 ${data.masters.length}${data.exe ? ' · EXE 있음' : ' · EXE 없음(스탯 편집 불가)'}`);
-  buildMapList(); buildNatials(); buildMasters(); selectMap(cur); battle.populate();
+  buildMapList(); buildNatials(); buildMasters(); buildSound(); selectMap(cur); battle.populate(); sfx.reset(); portraitCache.clear();
   if (!$('tab-maps').classList.contains('hidden')) fitView();
 }
 
@@ -59,7 +62,7 @@ async function ingest(fl: FileList) {
   let n = 0;
   for (const f of Array.from(fl)) {
     const up = f.name.toUpperCase();
-    if (!/^DATA\d\d\.DAT$/.test(up) && up !== 'VMTV2.EXE') continue;
+    if (!/^DATA\d\d\.DAT$/.test(up) && up !== 'VMTV2.EXE' && !up.endsWith('.MID')) continue;
     await putFile(up, new Uint8Array(await f.arrayBuffer())); n++;
   }
   status(`${n}개 저장`); await loadAll();
@@ -194,19 +197,34 @@ $('btnCopySlot').onclick = () => {
 
 // ---------- natials ----------
 const STAT = ['스탯1', '스탯2', '스탯3', '스탯4', '스탯5'];
+const portraitCache = new Map<number, HTMLCanvasElement | null>();
+function portrait(k: number): HTMLCanvasElement | null {
+  if (!portraitCache.has(k)) { const p = loaded ? data.portrait(k) : null; portraitCache.set(k, p ? portraitCanvas(p) : null); }
+  return portraitCache.get(k) ?? null;
+}
+function buildSound() {
+  const list = $('sfxList'), roles = $('sfxRoles'); const n = loaded ? data.sfxCount() : 0;
+  if (!n) { list.innerHTML = '<p class="muted">DATA13.DAT를 넣으면 효과음 목록이 나옵니다.</p>'; roles.innerHTML = ''; return; }
+  const cur = sfxRoles();
+  roles.innerHTML = SFX_ROLES.map(([r, label]) => `<label>${label} <select data-role="${r}">${Array.from({ length: n }, (_, i) => `<option value="${i}" ${cur[r] === i ? 'selected' : ''}>#${i}</option>`).join('')}<option value="-1" ${cur[r] < 0 ? 'selected' : ''}>없음</option></select></label>`).join('');
+  roles.querySelectorAll<HTMLSelectElement>('select').forEach((sel) => sel.onchange = () => { edits.sfx = { ...sfxRoles(), [sel.dataset.role as SfxRole]: +sel.value }; saveEdits(); if (+sel.value >= 0) sfx.play(+sel.value); });
+  list.innerHTML = `<table><tr><th>#</th><th>길이</th><th></th></tr>${Array.from({ length: n }, (_, i) => { const w = data.sfx(i); const dv = w ? new DataView(w.buffer, w.byteOffset) : null; const sec = w && dv ? ((w.length - 44) / dv.getUint32(28, true)).toFixed(2) : '?'; return `<tr><td>${i}</td><td>${sec}s</td><td class="l"><button data-i="${i}">▶ 재생</button></td></tr>`; }).join('')}</table>`;
+  list.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.onclick = () => sfx.play(+b.dataset.i!));
+}
 function buildNatials() {
   const host = $('natTable'); const nats = data.natials();
   if (!nats.length) { host.innerHTML = '<p class="muted">Vmtv2.exe를 파일 탭에서 넣으면 스탯이 표시됩니다.</p>'; return; }
-  const cols = ['#', '이름', '공격명', 'HP', ...STAT.flatMap((s) => [`${s}·L1`, `${s}·L2`, `${s}·L3`]), '이동', '속성', 'flag1', '사정', '마법', '이동형', 'MP'];
+  const cols = ['#', '', '이름', '공격명', 'HP', ...STAT.flatMap((s) => [`${s}·L1`, `${s}·L2`, `${s}·L3`]), '이동', '속성', 'flag1', '사정', '마법', '이동형', 'MP'];
   let html = `<table><tr>${cols.map((c) => `<th>${c}</th>`).join('')}</tr>`;
   for (const n of nats) {
     const e = edits.natials[n.index] ?? n;
     const inp = (path: string, v: number, orig: number) => `<td><input type="number" min="0" data-i="${n.index}" data-p="${path}" value="${v}" class="${v !== orig ? 'chg' : ''}"></td>`;
-    html += `<tr><td>${n.index}</td><td class="l">${n.name}</td><td class="l">${n.attack}</td>${inp('hp', e.hp, n.hp)}`;
+    html += `<tr><td>${n.index}</td><td class="l port" data-k="${n.index}"></td><td class="l">${n.name}</td><td class="l">${n.attack}</td>${inp('hp', e.hp, n.hp)}`;
     for (let k = 0; k < 5; k++) for (let l = 0; l < 3; l++) html += inp(`stats.${k}.${l}`, e.stats[k][l], n.stats[k][l]);
     html += inp('move', e.move, n.move) + `<td>${ELEMENT[e.element] ?? e.element}</td>` + inp('flag1', e.flag1, n.flag1) + inp('range', e.range, n.range) + inp('spell', e.spell, n.spell) + `<td>${MOVETYPE[e.moveType] ?? e.moveType}</td>` + inp('cost', e.cost, n.cost) + '</tr>';
   }
   host.innerHTML = html + '</table><p class="muted small">스탯1~5의 의미(공/방/마/마방/속도 추정)는 아직 미확인. 각 스탯은 레벨 1·2·3 값.</p>';
+  host.querySelectorAll<HTMLElement>('td.port').forEach((td) => { const c = portrait(+td.dataset.k!); if (c) { const t = document.createElement('canvas'); t.width = 48; t.height = 48; t.getContext('2d')!.drawImage(c, 0, 0, 48, 48 * c.height / c.width); td.appendChild(t); } });
   host.querySelectorAll<HTMLInputElement>('input').forEach((inp) => inp.onchange = () => {
     const i = +inp.dataset.i!; const base = nats[i]; const e = edits.natials[i] ?? (edits.natials[i] = JSON.parse(JSON.stringify(base)));
     const v = Math.max(0, Math.floor(+inp.value || 0)); const p = inp.dataset.p!.split('.');
@@ -237,5 +255,8 @@ $('btnExportExe').onclick = () => {
   download('Vmtv2.exe', data.patchedExe(Object.values(edits.natials))); status(`Vmtv2.exe 생성 (수정 네이티얼 ${Object.keys(edits.natials).length}종)`);
 };
 
-const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name });
+const sfx = new Sfx(() => (loaded ? data : null), sfxRoles);
+$<HTMLInputElement>('sfxOn').onchange = (e) => { sfx.enabled = (e.target as HTMLInputElement).checked; };
+$<HTMLInputElement>('sfxVol').oninput = (e) => { sfx.volume = +(e.target as HTMLInputElement).value; };
+const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name, portrait, sfx });
 loadAll();

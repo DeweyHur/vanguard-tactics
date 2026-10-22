@@ -7,7 +7,8 @@ import { RULES } from './battle/rules';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-export interface BattleDeps { data: () => VM2Data | null; natials: () => Natial[]; mapGrid: (m: MapInfo) => Uint16Array; mapTileset: (m: MapInfo) => Tileset; mapName: (m: MapInfo) => string }
+import type { Sfx } from './sound';
+export interface BattleDeps { data: () => VM2Data | null; natials: () => Natial[]; mapGrid: (m: MapInfo) => Uint16Array; mapTileset: (m: MapInfo) => Tileset; mapName: (m: MapInfo) => string; portrait: (k: number) => HTMLCanvasElement | null; sfx: Sfx }
 
 export function initBattle(deps: BattleDeps) {
   const canvas = $<HTMLCanvasElement>('bmap'), wrap = $('bwrap'), g = canvas.getContext('2d')!;
@@ -49,8 +50,10 @@ export function initBattle(deps: BattleDeps) {
   };
   $('bQuit').onclick = () => { b = null; $('bsetup').classList.remove('hidden'); refresh(); draw(); };
   $('bEnd').onclick = async () => {
-    if (!b || busy || b.s.winner >= 0) return; sel = null; summonIdx = -1; b.endTurn(); refresh(); draw();
-    busy = true; await new Promise((r) => setTimeout(r, 300)); if (b.s.side === 1 && b.s.winner < 0) botTurn(b); busy = false; refresh(); draw();
+    if (!b || busy || b.s.winner >= 0) return; sel = null; summonIdx = -1; b.endTurn(); deps.sfx.role('turn'); refresh(); draw();
+    busy = true; await new Promise((r) => setTimeout(r, 300)); const n0 = b.s.log.length; if (b.s.side === 1 && b.s.winner < 0) botTurn(b); busy = false;
+    const added = b.s.log.slice(n0); if (added.some((l) => l.includes('격파'))) deps.sfx.role('kill'); else if (added.some((l) => l.includes('피해'))) deps.sfx.role('attack'); else if (added.some((l) => l.includes('소환'))) deps.sfx.role('summon');
+    refresh(); draw();
   };
 
   function fit() {
@@ -82,16 +85,20 @@ export function initBattle(deps: BattleDeps) {
     g.restore();
   }
 
+  const portraitHtml = (id: string) => (id.startsWith('n') && deps.portrait(+id.slice(1)) ? `<div class="pbox" data-k="${id.slice(1)}"></div>` : '');
+  function mountPortrait(box: HTMLElement) { const c = deps.portrait(+box.dataset.k!); if (!c) return; const t = document.createElement('canvas'); const h = 150; t.height = h; t.width = Math.round(c.width * h / c.height); t.getContext('2d')!.drawImage(c, 0, 0, t.width, h); box.appendChild(t); }
   function refresh() {
     const info = $('bInfo'), ui = $('bUnit'), sm = $('bSummon');
     if (!b) { info.textContent = ''; ui.textContent = ''; sm.innerHTML = ''; $('bLog').textContent = ''; return; }
     const s = b.s; const st = (side: 0 | 1) => Object.values(s.stones).filter((o) => o === side).length;
     info.innerHTML = s.winner >= 0 ? `<b style="color:var(--acc)">${s.names[s.winner as 0 | 1]} 승리!</b> (턴 ${s.turn})` : `턴 ${s.turn} · <b>${s.side === 0 ? '내 차례' : '봇 차례'}</b><br><span class="e2">${s.names[0]}</span> MP ${s.mp[0]} 마법석 ${st(0)} · <span class="e3">${s.names[1]}</span> MP ${s.mp[1]} 마법석 ${st(1)}`;
-    if (sel) { const u = sel; ui.innerHTML = `<b>${u.def.name}</b> <span class="e${u.def.element}">${ELEMENT[u.def.element] ?? ''}</span> Lv${u.level}<br>HP ${u.hp}/${u.def.hp} · 공 ${b.stat(u, 0)} 방 ${b.stat(u, 1)} · 이동 ${u.def.move} 사정 ${u.def.range}<br><span class="muted">${u.moved ? '이동 완료' : '이동 가능'} · ${u.acted ? '행동 완료' : '행동 가능'}</span>`; }
+    if (sel) { const u = sel; ui.innerHTML = `${portraitHtml(u.def.id)}<b>${u.def.name}</b> <span class="e${u.def.element}">${ELEMENT[u.def.element] ?? ''}</span> Lv${u.level}<br>HP ${u.hp}/${u.def.hp} · 공 ${b.stat(u, 0)} 방 ${b.stat(u, 1)} · 이동 ${u.def.move} 사정 ${u.def.range}<br><span class="muted">${u.moved ? '이동 완료' : '이동 가능'} · ${u.acted ? '행동 완료' : '행동 가능'}</span>`; }
     else ui.innerHTML = '<span class="muted">유닛을 클릭하세요</span>';
+    ui.querySelectorAll<HTMLElement>('.pbox').forEach(mountPortrait);
     const my = s.side === 0 && s.winner < 0;
     sm.innerHTML = b.natials.map((n, i) => `<button data-i="${i}" class="${i === summonIdx ? 'sel' : ''}" ${!my || n.cost > s.mp[0] || !b!.summonCells(0, n).length ? 'disabled' : ''} title="HP ${n.hp} 공 ${n.stats[0][0]} 방 ${n.stats[1][0]} 이동 ${n.move} 사정 ${n.range}"><span class="e${n.element}">${ELEMENT[n.element]?.[0] ?? ''}</span> ${n.name} ${n.cost}</button>`).join('');
-    sm.querySelectorAll<HTMLButtonElement>('button').forEach((bt) => bt.onclick = () => { summonIdx = summonIdx === +bt.dataset.i! ? -1 : +bt.dataset.i!; sel = null; refresh(); draw(); });
+    sm.querySelectorAll<HTMLButtonElement>('button').forEach((bt) => { bt.onclick = () => { summonIdx = summonIdx === +bt.dataset.i! ? -1 : +bt.dataset.i!; sel = null; refresh(); draw(); };
+      bt.onmouseenter = () => { if (sel) return; const n = b!.natials[+bt.dataset.i!]; ui.innerHTML = `${portraitHtml(n.id)}<b>${n.name}</b> <span class="e${n.element}">${ELEMENT[n.element] ?? ''}</span><br>HP ${n.hp} · 공 ${n.stats[0][0]}/${n.stats[0][1]}/${n.stats[0][2]} 방 ${n.stats[1][0]}/${n.stats[1][1]}/${n.stats[1][2]}<br>이동 ${n.move} 사정 ${n.range} · MP ${n.cost}`; ui.querySelectorAll<HTMLElement>('.pbox').forEach(mountPortrait); }; });
     $('bLog').textContent = s.log.slice(-14).join('\n'); $('bLog').scrollTop = 1e6;
   }
 
@@ -113,10 +120,11 @@ export function initBattle(deps: BattleDeps) {
     const p = toWorld(e); const cell = pickCell(ts, grid, p.x, p.y); if (!cell) return;
     const s = b.s; if (s.side !== 0 || s.winner >= 0) return;
     const u = b.unitAt(cell.r, cell.c); let err: string | null = null;
-    if (summonIdx >= 0) { err = b.summon(summonIdx, cell.r, cell.c); if (!err) summonIdx = -1; }
-    else if (sel && u && u.side !== 0 && !sel.acted && b.targetsFrom(sel, sel.r, sel.c).includes(u)) { err = b.attack(sel.uid, u.uid); if (sel.hp <= 0) sel = null; }
+    const n0 = b.s.log.length;
+    if (summonIdx >= 0) { err = b.summon(summonIdx, cell.r, cell.c); if (!err) { summonIdx = -1; deps.sfx.role('summon'); } }
+    else if (sel && u && u.side !== 0 && !sel.acted && b.targetsFrom(sel, sel.r, sel.c).includes(u)) { err = b.attack(sel.uid, u.uid); if (!err) deps.sfx.role(b.s.log.slice(n0).some((l) => l.includes('격파')) ? 'kill' : 'attack'); if (sel.hp <= 0) sel = null; }
     else if (sel && !u && !sel.moved && b.reachable(sel).has(key(cell.r, cell.c))) err = b.move(sel.uid, cell.r, cell.c);
-    else if (u && u.side === 0) { sel = u; if (!u.moved && b.reachable(u).size <= 1) b.log(`! ${u.def.name}: 갈 수 있는 칸이 없음`); }
+    else if (u && u.side === 0) { sel = u; deps.sfx.role('select'); if (!u.moved && b.reachable(u).size <= 1) b.log(`! ${u.def.name}: 갈 수 있는 칸이 없음`); }
     else sel = null;
     if (err) b.log(`! ${err}`);
     refresh(); draw();

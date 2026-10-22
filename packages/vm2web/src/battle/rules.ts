@@ -3,7 +3,7 @@
  * chosen to feel like Vantage Master. Every number the engine uses lives here.
  */
 export const RULES = {
-  masterHp: 120, masterAtk: 24, masterDef: 16, masterMove: 4,
+  masterHp: 40, masterAtk: 12, masterDef: 8, masterMove: 4,
   mpStart: 600, mpRegen: 150, mpPerStone: 120, mpMax: 3000,
   /** terrain id -> cost per move type (Infinity = impassable). order: 걷기, 걷기2, 헤엄, 헤엄2, 날기 */
   moveCost: {

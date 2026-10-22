@@ -1,6 +1,6 @@
 import { CHUNK_H, CHUNK_W, HEX_W, ODD_OFF, ROW_STEP, TILE_H, type Tileset } from './vm2data';
 
-/** palette: pixel value v -> tileset palette[v-17]; 16 = transparent (approximation of the game's palette assembly) */
+/** palette entries are R,G,B,flag; pixel value v -> palette[v-17]; 16 = transparent */
 export function atlasCanvas(ts: Tileset): HTMLCanvasElement {
   const n = ts.chunks; const c = document.createElement('canvas'); c.width = CHUNK_W; c.height = CHUNK_H * n;
   const g = c.getContext('2d')!; const img = g.createImageData(CHUNK_W, CHUNK_H * n); const px = img.data;
@@ -9,7 +9,7 @@ export function atlasCanvas(ts: Tileset): HTMLCanvasElement {
     const v = ts.atlas[i]; const o = i * 4;
     if (v === 16) continue;
     const k = v - 17;
-    if (k >= 0 && k < ncol) { px[o] = pal[k * 4 + 2]; px[o + 1] = pal[k * 4 + 1]; px[o + 2] = pal[k * 4]; }
+    if (k >= 0 && k < ncol) { px[o] = pal[k * 4]; px[o + 1] = pal[k * 4 + 1]; px[o + 2] = pal[k * 4 + 2]; }
     else { const gr = Math.min(255, (v - 16) * 2 + 40); px[o] = px[o + 1] = px[o + 2] = gr; }
     px[o + 3] = 255;
   }
@@ -57,4 +57,11 @@ export function pickCell(ts: Tileset, grid: Uint16Array, wx: number, wy: number)
     const d = Math.hypot((wx - cx) / 24, (wy - cy) / 18); if (d <= bd) { bd = d; best = { r, c }; } // ties: front (later) row wins, matching draw order
   }
   return bd < 1.1 ? best : null;
+}
+
+/** RGBA canvas for a portrait (palette R,G,B,flag; 16 = transparent) */
+export function portraitCanvas(p: { w: number; h: number; pixels: Uint8Array; pal: Uint8Array }): HTMLCanvasElement {
+  const c = document.createElement('canvas'); c.width = p.w; c.height = p.h; const g = c.getContext('2d')!; const img = g.createImageData(p.w, p.h); const px = img.data; const n = p.pal.length >> 2;
+  for (let i = 0; i < p.w * p.h; i++) { const v = p.pixels[i]; if (v < 17) continue; const k = v - 17; const o = i * 4; if (k < n) { px[o] = p.pal[k * 4]; px[o + 1] = p.pal[k * 4 + 1]; px[o + 2] = p.pal[k * 4 + 2]; } px[o + 3] = 255; }
+  g.putImageData(img, 0, 0); return c;
 }

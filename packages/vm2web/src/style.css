@@ -43,3 +43,4 @@ td input { width: 56px; padding: 1px 3px; text-align: right; } td input.chg { bo
 #bSummon button { font-size: 11px; padding: 2px 5px; } #bSummon button.sel { background: var(--acc); color: #000; }
 #bLog { margin: 0; padding: 8px; font-size: 11px; color: var(--mut); white-space: pre-wrap; flex: 1; overflow: auto; }
 .e1 { color: #c9a35a; } .e2 { color: #6ab0ff; } .e3 { color: #ff7a5c; } .e4 { color: #b9f; }
+.pbox { float: right; margin: 0 0 4px 6px; } .pbox canvas { display: block; } td.port canvas { display: block; }
