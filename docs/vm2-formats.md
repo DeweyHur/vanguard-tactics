@@ -99,3 +99,10 @@ Sources: 나무위키 밴티지 마스터 택틱스 항목 (user-provided excerp
 - Facing order of the sheets is a visual guess and editable in the sprites tab ("방향 설정"): DATA01 frames default to
   W x3, NW, N x3, NE x2, E x3, SE x2, S x2 (no SW frames found — nearest direction is used), DATA02 groups W, NW, NE,
   E, SE, SW.
+- Master records (DATA10 `MAS0nn._SC`): name (20 bytes), byte 20 = sprite class 0..17 (DATA02 entry = class x 4, +2 for
+  the red team), u32 at 24 = master id, description from 28. Several masters share a class (Methis/Manon/Merlet = 12 …).
+- Map header `nums` (18 u32 at 48): [3] looks like the battle start time in minutes (Silent Hill 240 = 4:00, the capture
+  shows 4:45 after the first moves), [11] the scenario opponent (Silent Hill 13 = Grenda); [12..15] are not start cells
+  (they land on walls either way round). The scenario natial roster (5 natials on Silent Hill: Fa-Rancell, Reque,
+  Marme?, Hepitus, Guene-Foss) is not in the map headers or as a plain table in the EXE — probably code-driven or
+  saved progress.

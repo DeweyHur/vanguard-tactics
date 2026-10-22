@@ -66,6 +66,7 @@ export function initBattle(deps: BattleDeps) {
   function populate() {
     const d = deps.data(); if (!d) return;
     $<HTMLSelectElement>('bMap').innerHTML = d.maps.map((m) => `<option value="${m.index}">${m.index} ${deps.mapName(m)}</option>`).join('');
+    $<HTMLSelectElement>('bMap').onchange = () => { const m = d.maps[+$<HTMLSelectElement>('bMap').value]; const em = m.header.nums[11]; if (em >= 0 && em < d.masters.length) $<HTMLSelectElement>('bM1').value = `${d.masters[em].index}`; };
     const opts = d.masters.map((m) => `<option value="${m.index}">${m.name}</option>`).join('');
     $<HTMLSelectElement>('bM0').innerHTML = opts; $<HTMLSelectElement>('bM1').innerHTML = opts; $<HTMLSelectElement>('bM1').selectedIndex = Math.min(1, d.masters.length - 1);
   }
@@ -86,7 +87,7 @@ export function initBattle(deps: BattleDeps) {
     const m = d.maps[+$<HTMLSelectElement>('bMap').value]; ts = deps.mapTileset(m); grid = deps.mapGrid(m); rend = new TileRenderer(ts, d.palette(ts.pal));
     const T = ts, G = grid; const terrain: Terrain = { terrain: (r, c) => T.defs[G[r * 32 + c]].terrain, height: (r, c) => T.defs[G[r * 32 + c]].height };
     const n0 = $<HTMLSelectElement>('bM0'), n1 = $<HTMLSelectElement>('bM1'); masterIdx = [+n0.value - 52, +n1.value - 52];
-    b = new Battle(terrain, nats.map(toUnitDef), [findStart(terrain, { r: 5, c: 5 }), findStart(terrain, { r: 26, c: 26 })], [n0.selectedOptions[0].text, n1.selectedOptions[0].text]);
+    b = new Battle(terrain, nats.map(toUnitDef), [findStart(terrain, { r: 5, c: 5 }), findStart(terrain, { r: 26, c: 26 })], [n0.selectedOptions[0].text, n1.selectedOptions[0].text], m.header.nums[3] >= 0 && m.header.nums[3] < 1440 ? m.header.nums[3] : RULES.startClock);
     (window as unknown as { __battle: Battle; __cam: typeof cam }).__battle = b; (window as unknown as { __cam: typeof cam }).__cam = cam; (window as unknown as { __cellScreen: (r: number, c: number) => { x: number; y: number } }).__cellScreen = (r, c) => { const p = center(r, c); return { x: p.x * cam.z - cam.x, y: p.y * cam.z - cam.y }; }; summonIdx = -1; magicMode = false; $('bsetup').classList.add('hidden');
     wg.clearRect(0, 0, ws.w, ws.h); drawMap(wg, rend, grid); fit(); refresh(); deps.bgm(); runBots();
   };

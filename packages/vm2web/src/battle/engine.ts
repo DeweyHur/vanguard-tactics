@@ -27,9 +27,9 @@ export class Battle {
   s: BattleState;
   /** cells walked by the last successful move(), start to destination (for the walk animation) */
   lastPath: Cell[] = [];
-  constructor(public map: Terrain, public natials: UnitDef[], masters: [Cell, Cell], names: [string, string]) {
+  constructor(public map: Terrain, public natials: UnitDef[], masters: [Cell, Cell], names: [string, string], startClock = RULES.startClock) {
     const mp = RULES.master.mpStart, mx = RULES.master.mpMax;
-    this.s = { clock: RULES.startClock, active: 0, units: [], mp: [mp, mp], mpMax: [mx, mx], stones: {}, log: [], winner: -1, nextUid: 1, names, lastHour: Math.floor(RULES.startClock / 60) };
+    this.s = { clock: startClock, active: 0, units: [], mp: [mp, mp], mpMax: [mx, mx], stones: {}, log: [], winner: -1, nextUid: 1, names, lastHour: Math.floor(startClock / 60) };
     for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (RULES.stoneElement[map.terrain(r, c)] !== undefined) this.s.stones[key(r, c)] = -1;
     masters.forEach((p, i) => { const u = this.place(i as 0 | 1, masterDef(names[i]), p.r, p.c); u.oa = i; u.facing = i ? 1 : 4; });
     this.log(`${names[0]} vs ${names[1]} — ${clockText(this.s.clock)} 개시`);

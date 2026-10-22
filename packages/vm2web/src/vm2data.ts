@@ -39,7 +39,8 @@ export interface Sprite { frames: Uint8Array[]; w: number; h: number }
 /** DATA02 entry (blue team) holding each natial's map sprite; red team = +2. Order was identified visually. */
 /** natial k -> DATA02 entry: 90 + 4k (blue team; red team is +2) */
 export const NATIAL_SPRITE: number[] = Array.from({ length: 24 }, (_, k) => 90 + 4 * k);
-export const MASTER_SPRITE = (m: number) => (m < 18 ? m * 4 : 72 + (m - 18) * 2);
+/** DATA02 entry of a master sprite: the master's class (0..17, byte 20 of its DATA10 record) x 4; red team +2 */
+export const MASTER_SPRITE = (cls: number) => cls * 4;
 /** DATA01 index of the walk sheet for a DATA02 sprite entry (resource table pairs 1:k with 2:2k; 186..202 map to 183..191) */
 export const WALK_ENTRY = (data02Entry: number) => (data02Entry >= 186 ? 183 + (data02Entry - 186) / 2 : data02Entry / 2);
 export interface Natial { index: number; name: string; attack: string; hp: number; stats: number[][]; move: number; element: number; flag1: number; range: number; spell: number; moveType: number; cost: number }

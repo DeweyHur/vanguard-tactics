@@ -348,7 +348,7 @@ function buildSprites() {
     for (const e of list) { const g = document.createElement('div'); g.className = 'gal'; g.dataset.e = `${e}`; g.appendChild(thumbOf(e)); const l = document.createElement('div'); l.className = 'small'; l.textContent = `#${e} ${label(e)}`; g.appendChild(l); g.onclick = () => showEntry(e, label(e)); grid.appendChild(g); }
     allEl.appendChild(grid);
   };
-  section('마스터', entries.filter((e) => e < 72), (e) => `마스터 ${Math.floor(e / 4)} ${team(e)}${data.masters[Math.floor(e / 4)]?.name ? ' · ' + data.masters[Math.floor(e / 4)].name : ''}`);
+  section('마스터', entries.filter((e) => e < 72), (e) => `클래스 ${Math.floor(e / 4)} ${team(e)} · ${data.masters.filter((m) => m.cls === Math.floor(e / 4)).map((m) => m.name).join(', ')}`);
   section('소환수', entries.filter((e) => e >= 90 && e < 90 + 24 * 4), (e) => `${nats[Math.floor((e - 90) / 4)]?.name ?? ''} ${team(e, 90)}`);
   section('기타', entries.filter((e) => (e >= 72 && e < 90) || e >= 90 + 24 * 4), (e) => nameOfEntry(e));
   if (shownEntry >= 0 && entries.includes(shownEntry)) showEntry(shownEntry, ''); 
@@ -426,5 +426,5 @@ $('btnExportExe').onclick = () => {
 const sfx = new Sfx(() => (loaded ? data : null), sfxRoles);
 $<HTMLInputElement>('sfxOn').onchange = (e) => { sfx.enabled = (e.target as HTMLInputElement).checked; };
 $<HTMLInputElement>('sfxVol').oninput = (e) => { sfx.volume = +(e.target as HTMLInputElement).value; };
-const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name, portrait, sfx, sprite: (id, side, frame) => { const e = id === 'master' ? -1 : id.startsWith('n') ? spriteEntryFor(+id.slice(1)) : -1; return e < 0 ? null : spriteFrame(e + side * 2, frame); }, masterSprite: (m, side, frame) => spriteFrame(MASTER_SPRITE(m) + side * 2, frame), walk: (id, side, frame, m) => { const e = id === 'master' ? MASTER_SPRITE(m) : id.startsWith('n') ? spriteEntryFor(+id.slice(1)) : -1; return e < 0 ? null : walkFrame(e + side * 2, frame); }, effect: effectFrame, facing, bgm: () => { const f = edits.bgm && data.extra[edits.bgm]; if (f) midi.play(f); }, bgmStop: () => midi.stop() });
+const battle = initBattle({ data: () => (loaded ? data : null), natials: () => data.natials().map((n) => edits.natials[n.index] ?? n), mapGrid: gridOf, mapTileset: (m) => rendererFor(m).ts, mapName: (m) => textOf(m).name, portrait, sfx, sprite: (id, side, frame) => { const e = id === 'master' ? -1 : id.startsWith('n') ? spriteEntryFor(+id.slice(1)) : -1; return e < 0 ? null : spriteFrame(e + side * 2, frame); }, masterSprite: (m, side, frame) => spriteFrame(MASTER_SPRITE(data.masters[m]?.cls ?? m) + side * 2, frame), walk: (id, side, frame, m) => { const e = id === 'master' ? MASTER_SPRITE(data.masters[m]?.cls ?? m) : id.startsWith('n') ? spriteEntryFor(+id.slice(1)) : -1; return e < 0 ? null : walkFrame(e + side * 2, frame); }, effect: effectFrame, facing, bgm: () => { const f = edits.bgm && data.extra[edits.bgm]; if (f) midi.play(f); }, bgmStop: () => midi.stop() });
 loadAll();
