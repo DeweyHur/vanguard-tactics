@@ -19,7 +19,7 @@ export function initBattle(deps: BattleDeps) {
   let summonIdx = -1, magicMode = false, hover: Cell | null = null, busy = false; let masterIdx: [number, number] = [0, 1];
   const attackAnim = new Map<number, { t0: number; dx: number; dy: number }>();
   const pops: { uid: number; text: string; t0: number }[] = [];
-  const STEP_MS = 170, SUMMON_MS = 1000, SUMMON_FX = 162;
+  const STEP_MS = 170, SUMMON_MS = 1000, SUMMON_FX = 162, ACTION_PAUSE_MS = 2700;
   const walkAnim = new Map<number, { path: Cell[]; t0: number }>();
   const summonAnim = new Map<number, { t0: number }>();
   const STONE_MS = 1100; const stoneAnim = new Map<number, { t0: number; side: 0 | 1 }>();
@@ -108,7 +108,7 @@ export function initBattle(deps: BattleDeps) {
       else if (added.some((l) => l.includes('소환'))) { deps.sfx.role('summon'); startSummon(uid0); }
       refresh(); draw();
       if (walkMs) { await new Promise((r) => setTimeout(r, walkMs)); await panTo(u); }
-      if (hitLine) await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, ACTION_PAUSE_MS)); // let the action be seen before the next unit moves
     }
     busy = false; const u = active(); if (u && u.side === 0) { void panTo(u); deps.sfx.role('select'); } refresh(); draw();
   }
