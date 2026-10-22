@@ -59,7 +59,7 @@ export function initBattle(deps: BattleDeps) {
   let blinkTick = 0; const blinkOn = () => blinkTick % 9 === 0;
   const deaths = new Map<number, { t0: number; r: number; c: number; side: 0 | 1; id: string; facing: number }>();
   setInterval(() => { if (!b || $('tab-battle').classList.contains('hidden')) return; blinkTick++; draw(); }, 120);
-  let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { const t = now(); for (let i = pops.length - 1; i >= 0; i--) if (t - pops[i].t0 > 1100) pops.splice(i, 1); for (const [k, d] of deaths) if (t - d.t0 > 1400) deaths.delete(k); for (const [k, w] of walkAnim) if (t - w.t0 > (w.path.length - 1) * STEP_MS) walkAnim.delete(k); for (const [k, w] of summonAnim) if (t - w.t0 > SUMMON_MS) summonAnim.delete(k); for (const [k, w] of stoneAnim) if (t - w.t0 > STONE_MS) stoneAnim.delete(k); if (!attackAnim.size && !pops.length && !deaths.size && !walkAnim.size && !summonAnim.size && !stoneAnim.size) { clearInterval(animTimer); return; } draw(); }, 50); };
+  let animTimer = 0; const kickAnim = () => { clearInterval(animTimer); animTimer = window.setInterval(() => { const t = now(); for (let i = pops.length - 1; i >= 0; i--) if (t - pops[i].t0 > 1100) pops.splice(i, 1); for (const [k, d] of deaths) if (t - d.t0 > 1400) deaths.delete(k); for (const [k, w] of walkAnim) if (t - w.t0 > (w.path.length - 1) * STEP_MS) walkAnim.delete(k); for (const [k, w] of summonAnim) if (t - w.t0 > SUMMON_MS) summonAnim.delete(k); for (const [k, w] of stoneAnim) if (t - w.t0 > STONE_MS) stoneAnim.delete(k); stepCam(); if (!attackAnim.size && !pops.length && !deaths.size && !walkAnim.size && !summonAnim.size && !stoneAnim.size && !camAnim) { clearInterval(animTimer); return; } draw(); }, 50); };
 
   const toUnitDef = (n: Natial): UnitDef => ({ id: `n${n.index}`, name: n.name, stats: n.stats, move: n.move, element: n.element, range: Math.max(1, n.range), moveType: Math.min(4, n.moveType), cost: n.cost, upkeep: Math.round(n.hp / RULES.upkeepDiv), spell: n.spell, light: n.flag1 });
 
@@ -99,20 +99,33 @@ export function initBattle(deps: BattleDeps) {
   async function runBots() {
     if (busy) return; busy = true;
     while (b && b.s.winner < 0 && active() && active()!.side === 1) {
-      await new Promise((r) => setTimeout(r, 350));
-      if (!b) break; const u = active()!; const n0 = b.s.log.length; const uid0 = b.s.nextUid; const before = { r: u.r, c: u.c }; const aliveBefore = b.alive(); const stonesBefore = stonesSnap();
+      // the camera travels to the unit first; it acts only once it is on screen
+      refresh(); draw(); await panTo(active()!); await new Promise((r) => setTimeout(r, 250));
+      if (!b || !active() || active()!.side !== 1) break; const u = active()!; const n0 = b.s.log.length; const uid0 = b.s.nextUid; const before = { r: u.r, c: u.c }; const aliveBefore = b.alive(); const stonesBefore = stonesSnap();
       botAct(b); const walkMs = startWalk(u); noteDeaths(aliveBefore, walkMs); noteStones(stonesBefore, walkMs);
       const added = b.s.log.slice(n0); const hitLine = added.find((l) => l.includes('피해'));
       if (hitLine) { const tn = /→ (.+?) \d+ 피해/.exec(hitLine)?.[1]; const t = b.s.units.find((x) => x.def.name === tn); if (t) { const ax = u.c + (u.r & 1) * 0.5, tx = t.c + (t.r & 1) * 0.5; attackAnim.set(u.uid, { t0: now() + walkMs, dx: Math.sign(tx - ax), dy: Math.sign(t.r - u.r) }); kickAnim(); } setTimeout(() => { if (!deps.sfx.attack(u.def.id, masterIdx[1])) deps.sfx.role('attack'); }, walkMs); popDamage(n0, walkMs); if (added.some((l) => l.includes('격파'))) setTimeout(() => deps.sfx.role('kill'), walkMs + 600); }
       else if (added.some((l) => l.includes('소환'))) { deps.sfx.role('summon'); startSummon(uid0); }
-      if (u.r !== before.r || u.c !== before.c) panTo(u);
       refresh(); draw();
-      if (walkMs) await new Promise((r) => setTimeout(r, walkMs));
+      if (walkMs) { await new Promise((r) => setTimeout(r, walkMs)); await panTo(u); }
+      if (hitLine) await new Promise((r) => setTimeout(r, 500));
     }
-    busy = false; const u = active(); if (u && u.side === 0) { panTo(u); deps.sfx.role('select'); } refresh(); draw();
+    busy = false; const u = active(); if (u && u.side === 0) { void panTo(u); deps.sfx.role('select'); } refresh(); draw();
   }
   function afterAction() { summonIdx = -1; magicMode = false; refresh(); draw(); void runBots(); }
-  function panTo(u: Unit) { if (!ts || !grid) return; const p = center(u.r, u.c); const sx = p.x * cam.z - cam.x, sy = p.y * cam.z - cam.y; if (sx < 60 || sy < 60 || sx > canvas.width - 60 || sy > canvas.height - 60) { cam.x = p.x * cam.z - canvas.width / 2; cam.y = p.y * cam.z - canvas.height / 2; } }
+  /** smooth camera: glide to centre a unit; resolves when it arrives (immediately if already centred) */
+  let camAnim: { x0: number; y0: number; x1: number; y1: number; t0: number; dur: number; done: () => void } | null = null;
+  function panTo(u: Unit): Promise<void> {
+    if (!ts || !grid) return Promise.resolve(); const p = center(u.r, u.c); const x1 = p.x * cam.z - canvas.width / 2, y1 = p.y * cam.z - canvas.height / 2;
+    const d = Math.hypot(x1 - cam.x, y1 - cam.y); if (d < 24) { camAnim = null; return Promise.resolve(); }
+    const dur = Math.min(700, 220 + d * 0.5);
+    return new Promise((done) => { camAnim = { x0: cam.x, y0: cam.y, x1, y1, t0: now(), dur, done }; kickAnim(); });
+  }
+  function stepCam() {
+    if (!camAnim) return; const k = Math.min(1, (now() - camAnim.t0) / camAnim.dur); const e = 1 - Math.pow(1 - k, 3);
+    cam.x = camAnim.x0 + (camAnim.x1 - camAnim.x0) * e; cam.y = camAnim.y0 + (camAnim.y1 - camAnim.y0) * e;
+    if (k >= 1) { const f = camAnim.done; camAnim = null; f(); }
+  }
 
   function fit() {
     canvas.width = wrap.clientWidth; canvas.height = wrap.clientHeight; cam.z = 2;
@@ -234,7 +247,7 @@ export function initBattle(deps: BattleDeps) {
   canvas.oncontextmenu = (e) => e.preventDefault();
   canvas.onpointerdown = (e) => {
     if (e.button === 2) { summonIdx = -1; magicMode = false; refresh(); draw(); return; }
-    drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false }; canvas.setPointerCapture(e.pointerId);
+    if (camAnim) { const f = camAnim.done; camAnim = null; f(); } drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false }; canvas.setPointerCapture(e.pointerId);
   };
   canvas.onpointermove = (e) => {
     if (drag) { if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true; if (drag.moved) { cam.x = drag.cx - (e.clientX - drag.x); cam.y = drag.cy - (e.clientY - drag.y); draw(); return; } }
